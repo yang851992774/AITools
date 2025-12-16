@@ -1,0 +1,1507 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APK/APKS/AAB/XAPK 安装工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            position: relative;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                radial-gradient(circle at 20% 50%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(255, 119, 198, 0.3) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.98);
+            border-radius: 24px;
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.15);
+            padding: 50px;
+            position: relative;
+            z-index: 1;
+            backdrop-filter: blur(10px);
+        }
+
+        h1 {
+            text-align: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 40px;
+            font-size: 2.8em;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .status-section {
+            margin-bottom: 40px;
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .status-card {
+            background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+            border-radius: 16px;
+            padding: 24px;
+            border: 2px solid #e9ecef;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .status-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transform: scaleX(0);
+            transition: transform 0.4s;
+        }
+
+        .status-card.success::before {
+            background: linear-gradient(90deg, #28a745, #20c997);
+            transform: scaleX(1);
+        }
+
+        .status-card.error::before {
+            background: linear-gradient(90deg, #dc3545, #e83e8c);
+            transform: scaleX(1);
+        }
+
+        .status-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+        }
+
+        .status-card.success {
+            border-color: #28a745;
+            background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+        }
+
+        .status-card.error {
+            border-color: #dc3545;
+            background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+        }
+
+        .status-title {
+            font-weight: 600;
+            font-size: 1.15em;
+            margin-bottom: 12px;
+            color: #2c3e50;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-content {
+            color: #495057;
+            font-size: 0.95em;
+            line-height: 1.5;
+        }
+
+        .status-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+        }
+
+        .status-icon.success {
+            background: #28a745;
+        }
+
+        .status-icon.success::after {
+            content: '✓';
+        }
+
+        .status-icon.error {
+            background: #dc3545;
+        }
+
+        .status-icon.error::after {
+            content: '✗';
+        }
+
+        .section-title {
+            font-size: 1.4em;
+            color: #2c3e50;
+            margin-bottom: 24px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .upload-section, .xapk-section {
+            margin-top: 50px;
+            padding-top: 40px;
+            border-top: 2px solid #e9ecef;
+        }
+
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 20px;
+            padding: 80px 40px;
+            text-align: center;
+            background: linear-gradient(135deg, #f8f9ff 0%, #f0f2ff 100%);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-area::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(102, 126, 234, 0.1) 0%, transparent 70%);
+            transform: scale(0);
+            transition: transform 0.6s;
+        }
+
+        .upload-area:hover::before {
+            transform: scale(1);
+        }
+
+        .upload-area:hover {
+            border-color: #764ba2;
+            background: linear-gradient(135deg, #f0f2ff 0%, #e8ebff 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.2);
+        }
+
+        .upload-area.dragover {
+            border-color: #28a745;
+            background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 5em;
+            margin-bottom: 24px;
+            display: block;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .upload-text {
+            font-size: 1.3em;
+            color: #667eea;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+
+        .upload-hint {
+            color: #6c757d;
+            font-size: 0.95em;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .file-info, .xapk-info {
+            margin-top: 24px;
+            padding: 20px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+            border-radius: 12px;
+            border: 2px solid #e9ecef;
+            display: none;
+            transition: all 0.3s;
+        }
+
+        .file-info.show, .xapk-info.show {
+            display: block;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .file-name {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 8px;
+            font-size: 1.05em;
+        }
+
+        .file-size {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+
+        .button-group {
+            margin-top: 24px;
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 14px 32px;
+            border: none;
+            border-radius: 12px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-weight: 600;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+
+        .btn:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.5);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(108, 117, 125, 0.3);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(108, 117, 125, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .progress-container {
+            margin-top: 24px;
+            display: none;
+        }
+
+        .progress-container.show {
+            display: block;
+            animation: fadeIn 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .progress-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 12px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 50%, #667eea 100%);
+            background-size: 200% 100%;
+            width: 0%;
+            transition: width 0.3s ease-out;
+            animation: progress-shimmer 2s linear infinite;
+            border-radius: 10px;
+            position: relative;
+        }
+
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            animation: shimmer 1.5s infinite;
+        }
+
+        @keyframes progress-shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .progress-text {
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .message {
+            margin-top: 20px;
+            padding: 16px 20px;
+            border-radius: 12px;
+            display: none;
+            animation: slideIn 0.3s ease-out;
+            border-left: 4px solid;
+        }
+
+        .message.show {
+            display: block;
+        }
+
+        .message.success {
+            background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+            color: #155724;
+            border-left-color: #28a745;
+        }
+
+        .message.error {
+            background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+            color: #721c24;
+            border-left-color: #dc3545;
+        }
+
+        .refresh-btn {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            margin-top: 12px;
+            font-weight: 600;
+            transition: all 0.3s;
+            box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
+        }
+
+        .refresh-btn:hover {
+            background: linear-gradient(135deg, #218838 0%, #1ea080 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.4);
+        }
+
+        .xapk-input-group {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .xapk-input {
+            flex: 1;
+            padding: 14px 18px;
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            font-size: 1em;
+            transition: all 0.3s;
+            background: white;
+        }
+
+        .xapk-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .install-stages {
+            margin-top: 16px;
+            display: none;
+        }
+
+        .install-stages.show {
+            display: block;
+        }
+
+        .stage-item {
+            padding: 12px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            background: #f8f9fa;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: all 0.3s;
+        }
+
+        .stage-item.active {
+            background: linear-gradient(135deg, #e7f3ff 0%, #d0e7ff 100%);
+            border-left: 4px solid #667eea;
+        }
+
+        .stage-item.completed {
+            background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+        }
+
+        .stage-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+            background: #6c757d;
+        }
+
+        .stage-item.active .stage-icon {
+            background: #667eea;
+            animation: pulse 1.5s infinite;
+        }
+
+        .stage-item.completed .stage-icon {
+            background: #28a745;
+        }
+
+        .stage-item.completed .stage-icon::after {
+            content: '✓';
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .stage-text {
+            flex: 1;
+            color: #495057;
+            font-size: 0.95em;
+        }
+
+        .stage-item.active .stage-text {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .history-section {
+            margin-top: 50px;
+            padding-top: 40px;
+            border-top: 2px solid #e9ecef;
+        }
+
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .history-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .history-item {
+            background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+        }
+
+        .history-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+            border-color: #667eea;
+        }
+
+        .history-item-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .history-item-name {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 6px;
+            font-size: 1.05em;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .history-item-meta {
+            display: flex;
+            gap: 16px;
+            font-size: 0.85em;
+            color: #6c757d;
+        }
+
+        .history-item-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .history-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+
+        .history-btn-install {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .history-btn-install:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .history-btn-delete {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+        }
+
+        .history-btn-delete:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+        }
+
+        .history-empty {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+            font-size: 1.1em;
+        }
+
+        .history-empty-icon {
+            font-size: 4em;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 APK/APKS/AAB 安装工具</h1>
+
+        <div class="status-section">
+            <div class="status-grid">
+                <div class="status-card" id="adb-status">
+                    <div class="status-title">
+                        <span class="status-icon"></span>
+                        ADB 环境
+                    </div>
+                    <div class="status-content">检查中...</div>
+                </div>
+
+                <div class="status-card" id="java-status">
+                    <div class="status-title">
+                        <span class="status-icon"></span>
+                        Java 环境
+                    </div>
+                    <div class="status-content">检查中...</div>
+                </div>
+
+                <div class="status-card" id="device-status">
+                    <div class="status-title">
+                        <span class="status-icon"></span>
+                        设备连接
+                    </div>
+                    <div class="status-content">检查中...</div>
+                    <button class="refresh-btn" onclick="checkDevice()">🔄 刷新</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="upload-section">
+            <div class="section-title">📦 文件上传安装</div>
+            <div class="upload-area" id="upload-area">
+                <div class="upload-icon">📦</div>
+                <div class="upload-text">拖拽文件到此处或点击选择</div>
+                <div class="upload-hint">支持 APK、APKS、AAB 格式</div>
+                <input type="file" id="file-input" class="file-input" accept=".apk,.apks,.aab">
+            </div>
+
+            <div class="file-info" id="file-info">
+                <div class="file-name" id="file-name"></div>
+                <div class="file-size" id="file-size"></div>
+            </div>
+
+            <div class="button-group">
+                <button class="btn btn-primary" id="install-btn" onclick="installFile()" disabled>
+                    ⚡ 安装
+                </button>
+                <button class="btn btn-secondary" id="clear-btn" onclick="clearFile()" disabled>
+                    🗑️ 清除
+                </button>
+            </div>
+
+            <div class="progress-container" id="progress-container">
+                <div class="progress-info">
+                    <span class="progress-text" id="progress-text">准备中...</span>
+                    <span id="progress-percent">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+                <div class="install-stages" id="install-stages">
+                    <div class="stage-item" id="stage-upload">
+                        <div class="stage-icon">1</div>
+                        <div class="stage-text">上传文件</div>
+                    </div>
+                    <div class="stage-item" id="stage-extract">
+                        <div class="stage-icon">2</div>
+                        <div class="stage-text">解压文件（如需要）</div>
+                    </div>
+                    <div class="stage-item" id="stage-install">
+                        <div class="stage-icon">3</div>
+                        <div class="stage-text">安装到设备</div>
+                    </div>
+                    <div class="stage-item" id="stage-cleanup">
+                        <div class="stage-icon">4</div>
+                        <div class="stage-text">清理临时文件</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="message" id="message"></div>
+        </div>
+
+        <div class="xapk-section">
+            <div class="section-title">📥 XAPK 下载安装</div>
+            <div class="xapk-input-group">
+                <input type="text" id="xapk-url" class="xapk-input" placeholder="输入 XAPK 文件下载地址 (http:// 或 https://)">
+                <button class="btn btn-primary" id="download-xapk-btn" onclick="downloadXapk()">
+                    ⬇️ 下载
+                </button>
+            </div>
+            <div class="xapk-info" id="xapk-info">
+                <div class="file-name" id="xapk-file-name"></div>
+                <div class="file-size" id="xapk-file-size"></div>
+            </div>
+            <div class="button-group">
+                <button class="btn btn-primary" id="install-xapk-btn" onclick="installXapk()" disabled>
+                    ⚡ 安装 XAPK
+                </button>
+                <button class="btn btn-secondary" id="clear-xapk-btn" onclick="clearXapk()" disabled>
+                    🗑️ 清除
+                </button>
+            </div>
+            <div class="progress-container" id="xapk-progress-container">
+                <div class="progress-info">
+                    <span class="progress-text" id="xapk-progress-text">准备中...</span>
+                    <span id="xapk-progress-percent">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="xapk-progress-fill"></div>
+                </div>
+                <div class="install-stages" id="xapk-install-stages">
+                    <div class="stage-item" id="xapk-stage-download">
+                        <div class="stage-icon">1</div>
+                        <div class="stage-text">下载 XAPK 文件</div>
+                    </div>
+                    <div class="stage-item" id="xapk-stage-extract">
+                        <div class="stage-icon">2</div>
+                        <div class="stage-text">解压 XAPK 文件</div>
+                    </div>
+                    <div class="stage-item" id="xapk-stage-install">
+                        <div class="stage-icon">3</div>
+                        <div class="stage-text">安装到设备</div>
+                    </div>
+                    <div class="stage-item" id="xapk-stage-cleanup">
+                        <div class="stage-icon">4</div>
+                        <div class="stage-text">清理临时文件</div>
+                    </div>
+                </div>
+            </div>
+            <div class="message" id="xapk-message"></div>
+        </div>
+
+        <div class="history-section">
+            <div class="history-header">
+                <div class="section-title">📚 历史 XAPK 文件</div>
+                <button class="btn btn-secondary" onclick="loadHistoryXapk()" style="padding: 10px 20px; font-size: 0.9em;">
+                    🔄 刷新列表
+                </button>
+            </div>
+            <div class="history-list" id="history-list">
+                <div class="history-empty">
+                    <div class="history-empty-icon">📦</div>
+                    <div>暂无历史文件，下载 XAPK 后将显示在这里</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentFile = null;
+        let currentXapk = null;
+        let downloadProgressInterval = null;
+
+        // 初始化检查环境
+        document.addEventListener('DOMContentLoaded', function() {
+            checkEnvironment();
+            checkDevice();
+            loadHistoryXapk();
+        });
+
+        // 检查环境
+        async function checkEnvironment() {
+            try {
+                const response = await fetch('/api/check-env');
+                const data = await response.json();
+                
+                updateStatus('adb-status', data.adb);
+                updateStatus('java-status', data.java);
+            } catch (error) {
+                console.error('检查环境失败:', error);
+            }
+        }
+
+        // 检查设备
+        async function checkDevice() {
+            const statusCard = document.getElementById('device-status');
+            statusCard.querySelector('.status-content').textContent = '检查中...';
+            
+            try {
+                const response = await fetch('/api/check-device');
+                const data = await response.json();
+                
+                updateStatus('device-status', {
+                    available: data.connected,
+                    version: data.devices.length > 0 ? `已连接 ${data.devices.length} 个设备` : null,
+                    error: data.error
+                });
+            } catch (error) {
+                updateStatus('device-status', {
+                    available: false,
+                    version: null,
+                    error: '检查设备连接失败'
+                });
+            }
+        }
+
+        // 更新状态显示
+        function updateStatus(cardId, status) {
+            const card = document.getElementById(cardId);
+            const icon = card.querySelector('.status-icon');
+            const content = card.querySelector('.status-content');
+            
+            card.className = 'status-card';
+            icon.className = 'status-icon';
+            
+            if (status.available) {
+                card.classList.add('success');
+                icon.classList.add('success');
+                content.textContent = status.version || '正常';
+            } else {
+                card.classList.add('error');
+                icon.classList.add('error');
+                content.textContent = status.error || '未检测到';
+            }
+        }
+
+        // 文件上传区域事件
+        const uploadArea = document.getElementById('upload-area');
+        const fileInput = document.getElementById('file-input');
+
+        uploadArea.addEventListener('click', () => fileInput.click());
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        // 处理文件
+        async function handleFile(file) {
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (!['apk', 'apks', 'aab'].includes(ext)) {
+                showMessage('不支持的文件格式，请选择 APK、APKS 或 AAB 文件', 'error');
+                return;
+            }
+
+            currentFile = file;
+            
+            // 显示文件信息
+            document.getElementById('file-name').textContent = file.name;
+            document.getElementById('file-size').textContent = formatFileSize(file.size);
+            document.getElementById('file-info').classList.add('show');
+            
+            // 上传文件
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                updateProgress(0, '上传文件中...', 'upload');
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                updateProgress(100, '上传完成', 'upload');
+
+                if (data.success) {
+                    currentFile.uploadedPath = data.file_path;
+                    currentFile.fileType = data.file_type;
+                    document.getElementById('install-btn').disabled = false;
+                    document.getElementById('clear-btn').disabled = false;
+                    showMessage('文件上传成功', 'success');
+                    setTimeout(() => hideProgress(), 1000);
+                } else {
+                    hideProgress();
+                    showMessage(data.error || '文件上传失败', 'error');
+                    currentFile = null;
+                }
+            } catch (error) {
+                hideProgress();
+                showMessage('文件上传失败: ' + error.message, 'error');
+                currentFile = null;
+            }
+        }
+
+        // 安装文件
+        async function installFile() {
+            if (!currentFile || !currentFile.uploadedPath) {
+                showMessage('请先上传文件', 'error');
+                return;
+            }
+
+            document.getElementById('install-btn').disabled = true;
+            showProgress();
+            showInstallStages();
+            
+            // 模拟安装进度
+            const stages = ['extract', 'install', 'cleanup'];
+            let currentStage = 0;
+            
+            updateProgress(10, '准备安装...', 'upload');
+            await sleep(500);
+            
+            try {
+                // 根据文件类型显示不同阶段
+                if (currentFile.fileType === 'aab') {
+                    updateProgress(20, '转换 AAB 文件...', 'extract');
+                    await sleep(1000);
+                    updateProgress(40, '解压文件...', 'extract');
+                    await sleep(1000);
+                } else if (currentFile.fileType === 'apks') {
+                    updateProgress(30, '解压 APKS 文件...', 'extract');
+                    await sleep(1000);
+                }
+                
+                updateProgress(60, '安装到设备...', 'install');
+                
+                const response = await fetch('/api/install', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        file_path: currentFile.uploadedPath,
+                        file_type: currentFile.fileType
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    updateProgress(90, '清理临时文件...', 'cleanup');
+                    await sleep(500);
+                    updateProgress(100, '安装完成！', 'cleanup');
+                    showMessage('安装成功！', 'success');
+                    setTimeout(() => {
+                        clearFile();
+                        hideProgress();
+                    }, 2000);
+                } else {
+                    hideProgress();
+                    showMessage('安装失败: ' + (data.error || '未知错误'), 'error');
+                }
+            } catch (error) {
+                hideProgress();
+                showMessage('安装失败: ' + error.message, 'error');
+            } finally {
+                document.getElementById('install-btn').disabled = false;
+            }
+        }
+
+        // 清除文件
+        function clearFile() {
+            currentFile = null;
+            document.getElementById('file-info').classList.remove('show');
+            document.getElementById('install-btn').disabled = true;
+            document.getElementById('clear-btn').disabled = true;
+            fileInput.value = '';
+            hideMessage();
+            hideProgress();
+        }
+
+        // 进度相关函数
+        function updateProgress(percent, text, stage = null) {
+            const progressFill = document.getElementById('progress-fill');
+            const progressText = document.getElementById('progress-text');
+            const progressPercent = document.getElementById('progress-percent');
+            
+            progressFill.style.width = percent + '%';
+            progressText.textContent = text;
+            progressPercent.textContent = Math.round(percent) + '%';
+            
+            // 更新安装阶段
+            if (stage) {
+                updateStage(stage);
+            }
+        }
+
+        function showProgress() {
+            document.getElementById('progress-container').classList.add('show');
+            updateProgress(0, '准备中...');
+        }
+
+        function hideProgress() {
+            document.getElementById('progress-container').classList.remove('show');
+            document.getElementById('progress-fill').style.width = '0%';
+            resetStages();
+        }
+
+        function showInstallStages() {
+            document.getElementById('install-stages').classList.add('show');
+        }
+
+        function updateStage(stage) {
+            const stages = {
+                'upload': 'stage-upload',
+                'extract': 'stage-extract',
+                'install': 'stage-install',
+                'cleanup': 'stage-cleanup'
+            };
+            
+            // 重置所有阶段
+            resetStages();
+            
+            // 激活当前阶段
+            const stageId = stages[stage];
+            if (stageId) {
+                const stageEl = document.getElementById(stageId);
+                if (stageEl) {
+                    stageEl.classList.add('active');
+                }
+            }
+            
+            // 标记之前的阶段为完成
+            const stageOrder = ['upload', 'extract', 'install', 'cleanup'];
+            const currentIndex = stageOrder.indexOf(stage);
+            for (let i = 0; i < currentIndex; i++) {
+                const prevStageId = stages[stageOrder[i]];
+                if (prevStageId) {
+                    const prevStageEl = document.getElementById(prevStageId);
+                    if (prevStageEl) {
+                        prevStageEl.classList.remove('active');
+                        prevStageEl.classList.add('completed');
+                    }
+                }
+            }
+        }
+
+        function resetStages() {
+            const stages = ['stage-upload', 'stage-extract', 'stage-install', 'stage-cleanup'];
+            stages.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.classList.remove('active', 'completed');
+                }
+            });
+        }
+
+        // 显示消息
+        function showMessage(text, type) {
+            const messageEl = document.getElementById('message');
+            messageEl.textContent = text;
+            messageEl.className = `message ${type} show`;
+            
+            if (type === 'success') {
+                setTimeout(() => {
+                    hideMessage();
+                }, 3000);
+            }
+        }
+
+        function hideMessage() {
+            document.getElementById('message').classList.remove('show');
+        }
+
+        // 格式化文件大小
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        // XAPK 下载
+        async function downloadXapk() {
+            const url = document.getElementById('xapk-url').value.trim();
+            
+            if (!url) {
+                showXapkMessage('请输入 XAPK 下载地址', 'error');
+                return;
+            }
+
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                showXapkMessage('URL 必须以 http:// 或 https:// 开头', 'error');
+                return;
+            }
+
+            document.getElementById('download-xapk-btn').disabled = true;
+            showXapkProgress();
+            showXapkInstallStages();
+            
+            // 模拟下载进度
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                progress += Math.random() * 15;
+                if (progress > 95) progress = 95;
+                updateXapkProgress(progress, '下载中...', 'download');
+            }, 200);
+
+            try {
+                const response = await fetch('/api/download-xapk', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url: url })
+                });
+
+                clearInterval(progressInterval);
+                const data = await response.json();
+                updateXapkProgress(100, '下载完成', 'download');
+
+                if (data.success) {
+                    currentXapk = {
+                        file_path: data.file_path,
+                        file_name: data.file_name
+                    };
+                    
+                    // 显示文件信息
+                    document.getElementById('xapk-file-name').textContent = data.file_name;
+                    try {
+                        const fileSize = await getFileSize(data.file_path);
+                        document.getElementById('xapk-file-size').textContent = formatFileSize(fileSize);
+                    } catch (e) {
+                        document.getElementById('xapk-file-size').textContent = '文件大小未知';
+                    }
+                    
+                    document.getElementById('xapk-info').classList.add('show');
+                    document.getElementById('install-xapk-btn').disabled = false;
+                    document.getElementById('clear-xapk-btn').disabled = false;
+                    showXapkMessage('下载成功', 'success');
+                    setTimeout(() => hideXapkProgress(), 1500);
+                    // 刷新历史列表
+                    setTimeout(() => loadHistoryXapk(), 1000);
+                } else {
+                    hideXapkProgress();
+                    showXapkMessage(data.error || '下载失败', 'error');
+                }
+            } catch (error) {
+                clearInterval(progressInterval);
+                hideXapkProgress();
+                showXapkMessage('下载失败: ' + error.message, 'error');
+            } finally {
+                document.getElementById('download-xapk-btn').disabled = false;
+            }
+        }
+
+        // 安装 XAPK
+        async function installXapk() {
+            if (!currentXapk || !currentXapk.file_path) {
+                showXapkMessage('请先下载 XAPK 文件', 'error');
+                return;
+            }
+
+            document.getElementById('install-xapk-btn').disabled = true;
+            showXapkProgress();
+            showXapkInstallStages();
+            
+            updateXapkProgress(10, '准备安装...', 'download');
+            await sleep(500);
+            updateXapkProgress(30, '解压 XAPK 文件...', 'extract');
+            await sleep(1500);
+            updateXapkProgress(60, '安装到设备...', 'install');
+
+            try {
+                const response = await fetch('/api/install-xapk', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        file_path: currentXapk.file_path
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    updateXapkProgress(90, '清理临时文件...', 'cleanup');
+                    await sleep(500);
+                    updateXapkProgress(100, '安装完成！', 'cleanup');
+                    showXapkMessage('安装成功！', 'success');
+                    setTimeout(() => {
+                        clearXapk();
+                        hideXapkProgress();
+                    }, 2000);
+                } else {
+                    hideXapkProgress();
+                    showXapkMessage('安装失败: ' + (data.error || '未知错误'), 'error');
+                }
+            } catch (error) {
+                hideXapkProgress();
+                showXapkMessage('安装失败: ' + error.message, 'error');
+            } finally {
+                document.getElementById('install-xapk-btn').disabled = false;
+            }
+        }
+
+        // 清除 XAPK
+        function clearXapk() {
+            currentXapk = null;
+            document.getElementById('xapk-url').value = '';
+            document.getElementById('xapk-info').classList.remove('show');
+            document.getElementById('install-xapk-btn').disabled = true;
+            document.getElementById('clear-xapk-btn').disabled = true;
+            hideXapkMessage();
+            hideXapkProgress();
+        }
+
+        // XAPK 进度相关函数
+        function updateXapkProgress(percent, text, stage = null) {
+            const progressFill = document.getElementById('xapk-progress-fill');
+            const progressText = document.getElementById('xapk-progress-text');
+            const progressPercent = document.getElementById('xapk-progress-percent');
+            
+            progressFill.style.width = percent + '%';
+            progressText.textContent = text;
+            progressPercent.textContent = Math.round(percent) + '%';
+            
+            if (stage) {
+                updateXapkStage(stage);
+            }
+        }
+
+        function showXapkProgress() {
+            document.getElementById('xapk-progress-container').classList.add('show');
+            updateXapkProgress(0, '准备中...');
+        }
+
+        function hideXapkProgress() {
+            document.getElementById('xapk-progress-container').classList.remove('show');
+            document.getElementById('xapk-progress-fill').style.width = '0%';
+            resetXapkStages();
+        }
+
+        function showXapkInstallStages() {
+            document.getElementById('xapk-install-stages').classList.add('show');
+        }
+
+        function updateXapkStage(stage) {
+            const stages = {
+                'download': 'xapk-stage-download',
+                'extract': 'xapk-stage-extract',
+                'install': 'xapk-stage-install',
+                'cleanup': 'xapk-stage-cleanup'
+            };
+            
+            resetXapkStages();
+            
+            const stageId = stages[stage];
+            if (stageId) {
+                const stageEl = document.getElementById(stageId);
+                if (stageEl) {
+                    stageEl.classList.add('active');
+                }
+            }
+            
+            const stageOrder = ['download', 'extract', 'install', 'cleanup'];
+            const currentIndex = stageOrder.indexOf(stage);
+            for (let i = 0; i < currentIndex; i++) {
+                const prevStageId = stages[stageOrder[i]];
+                if (prevStageId) {
+                    const prevStageEl = document.getElementById(prevStageId);
+                    if (prevStageEl) {
+                        prevStageEl.classList.remove('active');
+                        prevStageEl.classList.add('completed');
+                    }
+                }
+            }
+        }
+
+        function resetXapkStages() {
+            const stages = ['xapk-stage-download', 'xapk-stage-extract', 'xapk-stage-install', 'xapk-stage-cleanup'];
+            stages.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.classList.remove('active', 'completed');
+                }
+            });
+        }
+
+        // 显示 XAPK 消息
+        function showXapkMessage(text, type) {
+            const messageEl = document.getElementById('xapk-message');
+            messageEl.textContent = text;
+            messageEl.className = `message ${type} show`;
+            
+            if (type === 'success') {
+                setTimeout(() => {
+                    hideXapkMessage();
+                }, 3000);
+            }
+        }
+
+        function hideXapkMessage() {
+            document.getElementById('xapk-message').classList.remove('show');
+        }
+
+        // 工具函数
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        async function getFileSize(filePath) {
+            return 0;
+        }
+
+        // 支持回车键下载
+        document.getElementById('xapk-url').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                downloadXapk();
+            }
+        });
+
+        // 加载历史 XAPK 列表
+        async function loadHistoryXapk() {
+            try {
+                const response = await fetch('/api/list-xapk');
+                const data = await response.json();
+                
+                const historyList = document.getElementById('history-list');
+                
+                if (!data.success || !data.files || data.files.length === 0) {
+                    historyList.innerHTML = `
+                        <div class="history-empty">
+                            <div class="history-empty-icon">📦</div>
+                            <div>暂无历史文件，下载 XAPK 后将显示在这里</div>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                historyList.innerHTML = data.files.map((file, index) => `
+                    <div class="history-item" data-file-path="${file.file_path}">
+                        <div class="history-item-info">
+                            <div class="history-item-name" title="${file.file_name}">${file.file_name}</div>
+                            <div class="history-item-meta">
+                                <span>📦 ${file.formatted_size}</span>
+                                <span>🕒 ${file.download_time}</span>
+                            </div>
+                        </div>
+                        <div class="history-item-actions">
+                            <button class="history-btn history-btn-install" onclick="installHistoryXapk('${file.file_path}', '${file.file_name.replace(/'/g, "\\'")}')">
+                                ⚡ 安装
+                            </button>
+                            <button class="history-btn history-btn-delete" onclick="deleteHistoryXapk('${file.file_path}', this)">
+                                🗑️ 删除
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('加载历史文件失败:', error);
+                const historyList = document.getElementById('history-list');
+                historyList.innerHTML = `
+                    <div class="history-empty">
+                        <div class="history-empty-icon">❌</div>
+                        <div>加载失败: ${error.message}</div>
+                    </div>
+                `;
+            }
+        }
+
+        // 从历史列表安装 XAPK
+        async function installHistoryXapk(filePath, fileName) {
+            if (!filePath) {
+                showXapkMessage('文件路径无效', 'error');
+                return;
+            }
+
+            // 设置当前 XAPK
+            currentXapk = {
+                file_path: filePath,
+                file_name: fileName
+            };
+
+            // 显示文件信息
+            document.getElementById('xapk-file-name').textContent = fileName;
+            document.getElementById('xapk-file-size').textContent = '已下载';
+            document.getElementById('xapk-info').classList.add('show');
+            document.getElementById('install-xapk-btn').disabled = false;
+            document.getElementById('clear-xapk-btn').disabled = false;
+
+            // 直接调用安装
+            await installXapk();
+        }
+
+        // 删除历史 XAPK 文件
+        async function deleteHistoryXapk(filePath, buttonElement) {
+            if (!confirm('确定要删除这个文件吗？删除后无法恢复。')) {
+                return;
+            }
+
+            const historyItem = buttonElement.closest('.history-item');
+            if (historyItem) {
+                historyItem.style.opacity = '0.5';
+                historyItem.style.pointerEvents = 'none';
+            }
+
+            try {
+                const response = await fetch('/api/delete-xapk', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ file_path: filePath })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    showXapkMessage('删除成功', 'success');
+                    // 重新加载列表
+                    setTimeout(() => {
+                        loadHistoryXapk();
+                    }, 500);
+                } else {
+                    if (historyItem) {
+                        historyItem.style.opacity = '1';
+                        historyItem.style.pointerEvents = 'auto';
+                    }
+                    showXapkMessage('删除失败: ' + (data.error || '未知错误'), 'error');
+                }
+            } catch (error) {
+                if (historyItem) {
+                    historyItem.style.opacity = '1';
+                    historyItem.style.pointerEvents = 'auto';
+                }
+                showXapkMessage('删除失败: ' + error.message, 'error');
+            }
+        }
+
+        // 页面加载时自动加载历史列表（已在 DOMContentLoaded 中调用）
+    </script>
+</body>
+</html>
