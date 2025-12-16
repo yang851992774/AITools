@@ -8,6 +8,7 @@ import zipfile
 import tempfile
 import json
 import urllib.request
+import urllib.parse
 from pathlib import Path
 from django.conf import settings
 
@@ -401,8 +402,33 @@ def download_xapk(url, save_path, progress_callback=None):
         save_dir = os.path.dirname(save_path)
         os.makedirs(save_dir, exist_ok=True)
         
-        # 使用流式下载以支持进度回调
-        response = urllib.request.urlopen(url)
+        # 创建请求对象，添加 User-Agent 和其他必要的 headers
+        # 模拟浏览器请求以避免被服务器拒绝
+        try:
+            parsed_url = urllib.parse.urlparse(url)
+            referer = f'{parsed_url.scheme}://{parsed_url.netloc}'
+        except:
+            referer = url
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'identity',
+            'Connection': 'keep-alive',
+            'Referer': referer
+        }
+        
+        # 创建请求
+        request = urllib.request.Request(url, headers=headers)
+        
+        # 使用 HTTPRedirectHandler 处理重定向
+        opener = urllib.request.build_opener(urllib.request.HTTPRedirectHandler())
+        
+        # 打开连接
+        response = opener.open(request, timeout=300)  # 5分钟超时
+        
+        # 获取文件大小
         total_size = int(response.headers.get('Content-Length', 0))
         
         downloaded = 0
@@ -425,6 +451,13 @@ def download_xapk(url, save_path, progress_callback=None):
             'message': '下载成功',
             'file_path': save_path,
             'error': None
+        }
+    except urllib.error.HTTPError as e:
+        return {
+            'success': False,
+            'message': '下载失败',
+            'file_path': None,
+            'error': f'HTTP 错误 {e.code}: {e.reason}'
         }
     except urllib.error.URLError as e:
         return {
