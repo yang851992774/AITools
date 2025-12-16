@@ -89,7 +89,7 @@ def upload_file(request):
     file_ext = os.path.splitext(file_name)[1].lower()
     
     # 检查文件类型
-    allowed_extensions = ['.apk', '.apks', '.aab']
+    allowed_extensions = ['.apk', '.apks', '.aab', '.xapk']
     if file_ext not in allowed_extensions:
         return Response({
             'success': False,
@@ -101,7 +101,8 @@ def upload_file(request):
     file_type_map = {
         '.apk': 'apk',
         '.apks': 'apks',
-        '.aab': 'aab'
+        '.aab': 'aab',
+        '.xapk': 'xapk'
     }
     file_type = file_type_map[file_ext]
     
@@ -170,6 +171,9 @@ def install_file(request):
             temp_dir = result.get('temp_dir')
         elif file_type == 'aab':
             result = install_aab(file_path)
+            temp_dir = result.get('temp_dir')
+        elif file_type == 'xapk':
+            result = install_xapk(file_path)
             temp_dir = result.get('temp_dir')
         else:
             return Response({

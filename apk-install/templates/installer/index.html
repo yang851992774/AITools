@@ -701,8 +701,8 @@
             <div class="upload-area" id="upload-area">
                 <div class="upload-icon">📦</div>
                 <div class="upload-text">拖拽文件到此处或点击选择</div>
-                <div class="upload-hint">支持 APK、APKS、AAB 格式</div>
-                <input type="file" id="file-input" class="file-input" accept=".apk,.apks,.aab">
+                <div class="upload-hint">支持 APK、APKS、AAB、XAPK 格式</div>
+                <input type="file" id="file-input" class="file-input" accept=".apk,.apks,.aab,.xapk">
             </div>
 
             <div class="file-info" id="file-info">
@@ -918,8 +918,8 @@
         // 处理文件
         async function handleFile(file) {
             const ext = file.name.split('.').pop().toLowerCase();
-            if (!['apk', 'apks', 'aab'].includes(ext)) {
-                showMessage('不支持的文件格式，请选择 APK、APKS 或 AAB 文件', 'error');
+            if (!['apk', 'apks', 'aab', 'xapk'].includes(ext)) {
+                showMessage('不支持的文件格式，请选择 APK、APKS、AAB 或 XAPK 文件', 'error');
                 return;
             }
 
@@ -990,6 +990,9 @@
                     await sleep(1000);
                 } else if (currentFile.fileType === 'apks') {
                     updateProgress(30, '解压 APKS 文件...', 'extract');
+                    await sleep(1000);
+                } else if (currentFile.fileType === 'xapk') {
+                    updateProgress(30, '解压 XAPK 文件...', 'extract');
                     await sleep(1000);
                 }
                 
