@@ -176,7 +176,7 @@ def install_apk(apk_path):
 
 def install_apks(apks_path):
     """
-    安装 APKS 文件（需要先解压）
+    安装 APKS 文件（使用 bundletool 命令）
     
     Args:
         apks_path: APKS 文件路径
@@ -184,114 +184,71 @@ def install_apks(apks_path):
     Returns:
         dict: {'success': bool, 'message': str, 'error': str, 'temp_dir': str}
     """
-    temp_dir = None
     try:
-        # 创建临时目录
-        temp_dir = tempfile.mkdtemp(dir=settings.TEMP_ROOT)
-        
-        # 解压 APKS 文件
-        with zipfile.ZipFile(apks_path, 'r') as zip_ref:
-            zip_ref.extractall(temp_dir)
-        
-        # 查找 APK 文件（通常在 splits 目录下）
-        splits_dir = os.path.join(temp_dir, 'splits')
-        if os.path.exists(splits_dir):
-            # 查找 base.apk
-            base_apk = os.path.join(splits_dir, 'base.apk')
-            if os.path.exists(base_apk):
-                # 对于 split APKs，需要使用 install-multiple
-                apk_files = [os.path.join(splits_dir, f) for f in os.listdir(splits_dir) if f.endswith('.apk')]
-                apk_files.sort()  # 确保 base.apk 在前
-                
-                # 使用 install-multiple 安装
-                cmd = ['adb', 'install-multiple'] + apk_files
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=300
-                )
-                
-                if result.returncode == 0:
-                    return {
-                        'success': True,
-                        'message': '安装成功',
-                        'error': None,
-                        'temp_dir': temp_dir
-                    }
-                else:
-                    error_msg = result.stderr.strip() or result.stdout.strip()
-                    return {
-                        'success': False,
-                        'message': '安装失败',
-                        'error': error_msg,
-                        'temp_dir': temp_dir
-                    }
-            else:
+        # 检查 bundletool 是否可用
+        bundletool_check = check_command('bundletool', '--version')
+        if not bundletool_check['available']:
+            # 尝试使用 java -jar bundletool.jar
+            bundletool_jar = str(Path(settings.BASE_DIR) / 'bundletool.jar')
+            if not os.path.exists(bundletool_jar):
                 return {
                     'success': False,
-                    'message': '未找到 base.apk',
-                    'error': 'APKS 文件格式不正确',
-                    'temp_dir': temp_dir
+                    'message': 'bundletool 未找到',
+                    'error': '请确保 bundletool.jar 存在于项目根目录，或 bundletool 命令可用',
+                    'temp_dir': None
                 }
+            bundletool_cmd = ['java', '-jar', bundletool_jar]
         else:
-            # 如果没有 splits 目录，尝试直接查找 APK 文件
-            apk_files = []
-            for root, dirs, files in os.walk(temp_dir):
-                for file in files:
-                    if file.endswith('.apk'):
-                        apk_files.append(os.path.join(root, file))
-            
-            if apk_files:
-                # 如果只有一个 APK，直接安装
-                if len(apk_files) == 1:
-                    return install_apk(apk_files[0])
-                else:
-                    # 多个 APK，使用 install-multiple
-                    apk_files.sort()
-                    cmd = ['adb', 'install-multiple'] + apk_files
-                    result = subprocess.run(
-                        cmd,
-                        capture_output=True,
-                        text=True,
-                        timeout=300
-                    )
-                    
-                    if result.returncode == 0:
-                        return {
-                            'success': True,
-                            'message': '安装成功',
-                            'error': None,
-                            'temp_dir': temp_dir
-                        }
-                    else:
-                        error_msg = result.stderr.strip() or result.stdout.strip()
-                        return {
-                            'success': False,
-                            'message': '安装失败',
-                            'error': error_msg,
-                            'temp_dir': temp_dir
-                        }
-            else:
-                return {
-                    'success': False,
-                    'message': '未找到 APK 文件',
-                    'error': 'APKS 文件格式不正确',
-                    'temp_dir': temp_dir
-                }
-    except zipfile.BadZipFile:
+            bundletool_cmd = ['bundletool']
+        
+        # 使用 bundletool install-apks 命令安装
+        install_cmd = bundletool_cmd + [
+            'install-apks',
+            '--apks', apks_path
+        ]
+        
+        result = subprocess.run(
+            install_cmd,
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+        
+        if result.returncode == 0:
+            return {
+                'success': True,
+                'message': '安装成功',
+                'error': None,
+                'temp_dir': None
+            }
+        else:
+            error_msg = result.stderr.strip() or result.stdout.strip()
+            return {
+                'success': False,
+                'message': '安装失败',
+                'error': error_msg,
+                'temp_dir': None
+            }
+    except FileNotFoundError as e:
         return {
             'success': False,
-            'message': '文件格式错误',
-            'error': 'APKS 文件不是有效的 ZIP 文件',
-            'temp_dir': temp_dir
+            'message': '工具未找到',
+            'error': f'未找到必要的工具: {str(e)}',
+            'temp_dir': None
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            'success': False,
+            'message': '安装超时',
+            'error': '安装过程超过5分钟',
+            'temp_dir': None
         }
     except Exception as e:
         return {
             'success': False,
             'message': '安装异常',
             'error': str(e),
-            'temp_dir': temp_dir
+            'temp_dir': None
         }
 
 
@@ -309,7 +266,7 @@ def install_aab(aab_path):
     apks_path = None
     try:
         # 检查 bundletool 是否可用
-        bundletool_check = check_command('bundletool')
+        bundletool_check = check_command('bundletool','build-apks')
         if not bundletool_check['available']:
             # 尝试使用 java -jar bundletool.jar
             bundletool_jar = str(Path(settings.BASE_DIR) / 'bundletool.jar')
