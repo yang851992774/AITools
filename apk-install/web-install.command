@@ -32,13 +32,16 @@ python manage.py runserver &
 echo "等待服务器启动..."
 sleep 3
 
-# 根据操作系统启动默认浏览器并打开服务地址
+# 根据操作系统打开网址（如果浏览器已打开，会在新标签页打开）
 if command -v xdg-open >/dev/null 2>&1; then
-    xdg-open http://127.0.0.1:8000/ &
+    # Linux: xdg-open 会在新标签页打开（如果浏览器已运行）
+    xdg-open http://127.0.0.1:8000/ 2>/dev/null &
 elif command -v open >/dev/null 2>&1; then
-    open http://127.0.0.1:8000/ &
+    # macOS: open 会在新标签页打开（如果浏览器已运行）
+    open http://127.0.0.1:8000/ 2>/dev/null &
 elif command -v start >/dev/null 2>&1; then
-    start http://127.0.0.1:8000/ &
+    # Windows: start 会在新标签页打开（如果浏览器已运行）
+    start http://127.0.0.1:8000/ 2>/dev/null &
 else
     echo "请手动在浏览器中打开: http://127.0.0.1:8000/"
 fi
