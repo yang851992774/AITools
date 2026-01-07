@@ -12,5 +12,6 @@ urlpatterns = [
     path('api/install-xapk', views.install_xapk_file, name='install_xapk_file'),
     path('api/list-xapk', views.list_xapk_files, name='list_xapk_files'),
     path('api/delete-xapk', views.delete_xapk_file, name='delete_xapk_file'),
+    path('api/open-folder', views.open_folder, name='open_folder'),
 ]
 

@@ -8,6 +8,8 @@ import shutil
 import threading
 import uuid
 import re
+import subprocess
+import platform
 from datetime import datetime
 from django.shortcuts import render
 from django.http import JsonResponse
@@ -694,5 +696,82 @@ def delete_xapk_file(request):
         return Response({
             'success': False,
             'message': '删除失败',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+def open_folder(request):
+    """
+    打开文件所在的文件夹
+    
+    Request body:
+        {
+            'file_path': str  # 文件路径
+        }
+    
+    Returns:
+        Response: {
+            'success': bool,
+            'message': str,
+            'error': str
+        }
+    """
+    file_path = request.data.get('file_path')
+    
+    if not file_path:
+        return Response({
+            'success': False,
+            'message': '参数不完整',
+            'error': '缺少 file_path 参数'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # 安全检查：确保文件路径在允许的目录下
+    xapk_dir = os.path.join(settings.MEDIA_ROOT, 'xapk')
+    uploads_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
+    
+    if not (file_path.startswith(xapk_dir) or file_path.startswith(uploads_dir)):
+        return Response({
+            'success': False,
+            'message': '安全错误',
+            'error': '文件路径不在允许的目录中'
+        }, status=status.HTTP_403_FORBIDDEN)
+    
+    if not os.path.exists(file_path):
+        return Response({
+            'success': False,
+            'message': '文件不存在',
+            'error': f'文件路径不存在: {file_path}'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    try:
+        # 获取文件夹路径
+        folder_path = os.path.dirname(os.path.abspath(file_path))
+        
+        # 根据操作系统选择打开命令
+        system = platform.system()
+        
+        if system == 'Darwin':  # macOS
+            subprocess.run(['open', folder_path], check=True)
+        elif system == 'Windows':  # Windows
+            subprocess.run(['explorer', folder_path], check=True)
+        else:  # Linux
+            subprocess.run(['xdg-open', folder_path], check=True)
+        
+        return Response({
+            'success': True,
+            'message': '文件夹已打开',
+            'error': None
+        })
+    except subprocess.CalledProcessError as e:
+        return Response({
+            'success': False,
+            'message': '打开文件夹失败',
+            'error': f'系统命令执行失败: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': '打开文件夹异常',
             'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
