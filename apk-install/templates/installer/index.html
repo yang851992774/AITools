@@ -752,9 +752,23 @@
 
         <div class="xapk-section">
             <div class="section-title">📥 XAPK 下载安装</div>
-            <div class="xapk-input-group">
+            <div style="margin-bottom: 15px;">
+                <label style="display: flex; align-items: center; gap: 15px; font-size: 0.95em; color: #495057;">
+                    <input type="radio" name="download-type" id="download-type-url" value="url" checked onchange="toggleDownloadType()" style="width: 18px; height: 18px; cursor: pointer;">
+                    <span>通过 URL 下载</span>
+                    <input type="radio" name="download-type" id="download-type-package" value="package" onchange="toggleDownloadType()" style="width: 18px; height: 18px; cursor: pointer; margin-left: 20px;">
+                    <span>通过包名下载</span>
+                </label>
+            </div>
+            <div class="xapk-input-group" id="url-input-group">
                 <input type="text" id="xapk-url" class="xapk-input" placeholder="输入 XAPK 文件下载地址 (http:// 或 https://)">
                 <button class="btn btn-primary" id="download-xapk-btn" onclick="downloadXapk()">
+                    ⬇️ 下载
+                </button>
+            </div>
+            <div class="xapk-input-group" id="package-input-group" style="display: none;">
+                <input type="text" id="xapk-package" class="xapk-input" placeholder="输入应用包名 (例如: com.example.app)">
+                <button class="btn btn-primary" id="download-xapk-package-btn" onclick="downloadXapkByPackage()">
                     ⬇️ 下载
                 </button>
             </div>
@@ -1162,16 +1176,13 @@
             document.getElementById('download-xapk-btn').disabled = true;
             showXapkProgress();
             showXapkInstallStages();
-            
-            // 模拟下载进度
-            let progress = 0;
-            const progressInterval = setInterval(() => {
-                progress += Math.random() * 15;
-                if (progress > 95) progress = 95;
-                updateXapkProgress(progress, '下载中...', 'download');
-            }, 200);
+            updateXapkProgress(0, '准备下载...', 'download');
+
+            let taskId = null;
+            let progressInterval = null;
 
             try {
+                // 启动下载任务
                 const response = await fetch('/api/download-xapk', {
                     method: 'POST',
                     headers: {
@@ -1180,43 +1191,96 @@
                     body: JSON.stringify({ url: url })
                 });
 
-                clearInterval(progressInterval);
                 const data = await response.json();
-                updateXapkProgress(100, '下载完成', 'download');
 
-                if (data.success) {
-                    currentXapk = {
-                        file_path: data.file_path,
-                        file_name: data.file_name
-                    };
-                    
-                    // 显示文件信息
-                    document.getElementById('xapk-file-name').textContent = data.file_name;
-                    try {
-                        const fileSize = await getFileSize(data.file_path);
-                        document.getElementById('xapk-file-size').textContent = formatFileSize(fileSize);
-                    } catch (e) {
-                        document.getElementById('xapk-file-size').textContent = '文件大小未知';
-                    }
-                    
-                    document.getElementById('xapk-info').classList.add('show');
-                    document.getElementById('install-xapk-btn').disabled = false;
-                    document.getElementById('clear-xapk-btn').disabled = false;
-                    showXapkMessage('下载成功', 'success');
-                    setTimeout(() => hideXapkProgress(), 1500);
-                    // 刷新历史列表
-                    setTimeout(() => loadHistoryXapk(), 1000);
-                } else {
+                if (!data.success) {
                     hideXapkProgress();
-                    showXapkMessage(data.error || '下载失败', 'error');
+                    showXapkMessage(data.error || '启动下载失败', 'error');
+                    document.getElementById('download-xapk-btn').disabled = false;
+                    return;
                 }
+
+                taskId = data.task_id;
+
+                // 轮询下载进度
+                progressInterval = setInterval(async () => {
+                    try {
+                        const progressResponse = await fetch(`/api/download-progress?task_id=${taskId}`);
+                        const progressData = await progressResponse.json();
+
+                        if (!progressData.success) {
+                            clearInterval(progressInterval);
+                            hideXapkProgress();
+                            showXapkMessage(progressData.error || '获取进度失败', 'error');
+                            document.getElementById('download-xapk-btn').disabled = false;
+                            return;
+                        }
+
+                        const percent = progressData.percent || 0;
+                        const downloaded = progressData.downloaded || 0;
+                        const total = progressData.total || 0;
+                        const speed = progressData.speed || 0;
+                        const status = progressData.status;
+
+                        // 格式化速度
+                        const speedText = speed > 0 ? formatSpeed(speed) : '计算中...';
+                        const downloadedText = formatFileSize(downloaded);
+                        const totalText = total > 0 ? formatFileSize(total) : '未知';
+                        
+                        // 更新进度显示
+                        const progressText = `下载中... ${downloadedText} / ${totalText} (${speedText})`;
+                        updateXapkProgress(percent, progressText, 'download');
+
+                        // 检查状态
+                        if (status === 'completed') {
+                            clearInterval(progressInterval);
+                            updateXapkProgress(100, '下载完成', 'download');
+
+                            currentXapk = {
+                                file_path: progressData.file_path,
+                                file_name: progressData.file_name
+                            };
+                            
+                            // 显示文件信息
+                            document.getElementById('xapk-file-name').textContent = progressData.file_name;
+                            document.getElementById('xapk-file-size').textContent = totalText;
+                            
+                            document.getElementById('xapk-info').classList.add('show');
+                            document.getElementById('install-xapk-btn').disabled = false;
+                            document.getElementById('clear-xapk-btn').disabled = false;
+                            showXapkMessage('下载成功', 'success');
+                            setTimeout(() => hideXapkProgress(), 1500);
+                            // 刷新历史列表
+                            setTimeout(() => loadHistoryXapk(), 1000);
+                            document.getElementById('download-xapk-btn').disabled = false;
+                        } else if (status === 'error') {
+                            clearInterval(progressInterval);
+                            hideXapkProgress();
+                            showXapkMessage(progressData.error || '下载失败', 'error');
+                            document.getElementById('download-xapk-btn').disabled = false;
+                        }
+                    } catch (error) {
+                        console.error('获取进度失败:', error);
+                    }
+                }, 500); // 每500ms轮询一次
+
             } catch (error) {
-                clearInterval(progressInterval);
+                if (progressInterval) {
+                    clearInterval(progressInterval);
+                }
                 hideXapkProgress();
                 showXapkMessage('下载失败: ' + error.message, 'error');
-            } finally {
                 document.getElementById('download-xapk-btn').disabled = false;
             }
+        }
+
+        // 格式化下载速度
+        function formatSpeed(bytesPerSecond) {
+            if (bytesPerSecond === 0) return '0 B/s';
+            const k = 1024;
+            const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+            const i = Math.floor(Math.log(bytesPerSecond) / Math.log(k));
+            return Math.round(bytesPerSecond / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
         }
 
         // 安装 XAPK
@@ -1379,12 +1443,149 @@
             return 0;
         }
 
+        // 切换下载类型
+        function toggleDownloadType() {
+            const urlType = document.getElementById('download-type-url').checked;
+            const urlGroup = document.getElementById('url-input-group');
+            const packageGroup = document.getElementById('package-input-group');
+            
+            if (urlType) {
+                urlGroup.style.display = 'flex';
+                packageGroup.style.display = 'none';
+            } else {
+                urlGroup.style.display = 'none';
+                packageGroup.style.display = 'flex';
+            }
+        }
+
         // 支持回车键下载
         document.getElementById('xapk-url').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 downloadXapk();
             }
         });
+
+        document.getElementById('xapk-package').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                downloadXapkByPackage();
+            }
+        });
+
+        // 通过包名下载
+        async function downloadXapkByPackage() {
+            const packageName = document.getElementById('xapk-package').value.trim();
+            
+            if (!packageName) {
+                showXapkMessage('请输入应用包名', 'error');
+                return;
+            }
+
+            // 验证包名格式（基本验证：不能为空，可以包含点、下划线、数字、字母）
+            if (!/^[a-zA-Z][a-zA-Z0-9_.]*$/.test(packageName)) {
+                showXapkMessage('包名格式不正确，包名应以字母开头，只能包含字母、数字、点和下划线', 'error');
+                return;
+            }
+
+            document.getElementById('download-xapk-package-btn').disabled = true;
+            showXapkProgress();
+            showXapkInstallStages();
+            updateXapkProgress(0, '准备下载...', 'download');
+
+            let taskId = null;
+            let progressInterval = null;
+
+            try {
+                // 启动下载任务（使用包名）
+                const response = await fetch('/api/download-xapk', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ package_name: packageName })
+                });
+
+                const data = await response.json();
+
+                if (!data.success) {
+                    hideXapkProgress();
+                    showXapkMessage(data.error || '启动下载失败', 'error');
+                    document.getElementById('download-xapk-package-btn').disabled = false;
+                    return;
+                }
+
+                taskId = data.task_id;
+
+                // 轮询下载进度（与 URL 下载使用相同的逻辑）
+                progressInterval = setInterval(async () => {
+                    try {
+                        const progressResponse = await fetch(`/api/download-progress?task_id=${taskId}`);
+                        const progressData = await progressResponse.json();
+
+                        if (!progressData.success) {
+                            clearInterval(progressInterval);
+                            hideXapkProgress();
+                            showXapkMessage(progressData.error || '获取进度失败', 'error');
+                            document.getElementById('download-xapk-package-btn').disabled = false;
+                            return;
+                        }
+
+                        const percent = progressData.percent || 0;
+                        const downloaded = progressData.downloaded || 0;
+                        const total = progressData.total || 0;
+                        const speed = progressData.speed || 0;
+                        const status = progressData.status;
+
+                        // 格式化速度
+                        const speedText = speed > 0 ? formatSpeed(speed) : '计算中...';
+                        const downloadedText = formatFileSize(downloaded);
+                        const totalText = total > 0 ? formatFileSize(total) : '未知';
+                        
+                        // 更新进度显示
+                        const progressText = `下载中... ${downloadedText} / ${totalText} (${speedText})`;
+                        updateXapkProgress(percent, progressText, 'download');
+
+                        // 检查状态
+                        if (status === 'completed') {
+                            clearInterval(progressInterval);
+                            updateXapkProgress(100, '下载完成', 'download');
+
+                            currentXapk = {
+                                file_path: progressData.file_path,
+                                file_name: progressData.file_name
+                            };
+                            
+                            // 显示文件信息
+                            document.getElementById('xapk-file-name').textContent = progressData.file_name;
+                            document.getElementById('xapk-file-size').textContent = totalText;
+                            
+                            document.getElementById('xapk-info').classList.add('show');
+                            document.getElementById('install-xapk-btn').disabled = false;
+                            document.getElementById('clear-xapk-btn').disabled = false;
+                            showXapkMessage('下载成功', 'success');
+                            setTimeout(() => hideXapkProgress(), 1500);
+                            // 刷新历史列表
+                            setTimeout(() => loadHistoryXapk(), 1000);
+                            document.getElementById('download-xapk-package-btn').disabled = false;
+                        } else if (status === 'error') {
+                            clearInterval(progressInterval);
+                            hideXapkProgress();
+                            showXapkMessage(progressData.error || '下载失败', 'error');
+                            document.getElementById('download-xapk-package-btn').disabled = false;
+                        }
+                    } catch (error) {
+                        console.error('获取进度失败:', error);
+                    }
+                }, 500); // 每500ms轮询一次
+
+            } catch (error) {
+                if (progressInterval) {
+                    clearInterval(progressInterval);
+                }
+                hideXapkProgress();
+                showXapkMessage('下载失败: ' + error.message, 'error');
+                document.getElementById('download-xapk-package-btn').disabled = false;
+            }
+        }
 
         // 加载历史 XAPK 列表
         async function loadHistoryXapk() {

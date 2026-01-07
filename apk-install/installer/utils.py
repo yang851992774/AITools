@@ -442,9 +442,10 @@ def download_xapk(url, save_path, progress_callback=None):
                 f.write(chunk)
                 downloaded += len(chunk)
                 
-                # 调用进度回调
-                if progress_callback and total_size > 0:
-                    progress_callback(downloaded, total_size)
+                # 调用进度回调（无论 total_size 是否为 0 都调用，以便更新下载进度）
+                if progress_callback:
+                    # 如果 total_size 为 0，使用 downloaded 作为 total（表示未知大小）
+                    progress_callback(downloaded, total_size if total_size > 0 else downloaded)
         
         return {
             'success': True,

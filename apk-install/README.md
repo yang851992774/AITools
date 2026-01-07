@@ -529,3 +529,9 @@ python manage.py runserver 0.0.0.0:8000
 ## 联系方式
 
 如有问题或建议，请提交 Issue。
+
+
+https://d.apkpure.com/b/XAPK/{package_name}?version=latest
+https://d.apkpure.com/b/XAPK/com.red.sortingstore.android?version=latest
+https://d.apkpure.com/b/XAPK/com.snake.escape.maze.slither.puzzle?version=latest
+https://d.apkpure.com/b/XAPK/com.loomgames.pixelflow?version=latest

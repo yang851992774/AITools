@@ -5,6 +5,9 @@ import os
 import time
 import tempfile
 import shutil
+import threading
+import uuid
+import re
 from datetime import datetime
 from django.shortcuts import render
 from django.http import JsonResponse
@@ -18,6 +21,9 @@ from .utils import (
     install_apk, install_apks, install_aab, cleanup_temp_files,
     download_xapk, install_xapk, extract_xapk
 )
+
+# 存储下载进度的全局字典
+download_progress = {}
 
 
 def index(request):
@@ -206,38 +212,196 @@ def install_file(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+def _download_xapk_task(task_id, url, temp_path, save_dir):
+    """异步下载任务"""
+    try:
+        # 初始化进度
+        download_progress[task_id] = {
+            'downloaded': 0,
+            'total': 0,
+            'speed': 0,
+            'status': 'downloading',
+            'error': None,
+            'file_path': None,
+            'file_name': None,
+            'start_time': time.time(),
+            'last_update_time': time.time(),
+            'last_downloaded': 0,
+            'speed_samples': []  # 用于计算平均速度的样本
+        }
+        
+        # 进度回调函数
+        def progress_callback(downloaded, total):
+            current_time = time.time()
+            progress_data = download_progress[task_id]
+            
+            # 更新下载量和总量
+            progress_data['downloaded'] = downloaded
+            progress_data['total'] = total
+            
+            # 计算速度（使用滑动窗口平均）
+            time_diff = current_time - progress_data['last_update_time']
+            
+            # 至少间隔 0.5 秒才更新速度，避免频繁计算导致的不准确
+            if time_diff >= 0.5:
+                downloaded_diff = downloaded - progress_data['last_downloaded']
+                if downloaded_diff > 0 and time_diff > 0:
+                    # 计算瞬时速度
+                    instant_speed = downloaded_diff / time_diff  # bytes per second
+                    
+                    # 添加到速度样本列表
+                    progress_data['speed_samples'].append({
+                        'speed': instant_speed,
+                        'time': current_time
+                    })
+                    
+                    # 只保留最近5秒内的样本
+                    cutoff_time = current_time - 5.0
+                    progress_data['speed_samples'] = [
+                        s for s in progress_data['speed_samples']
+                        if s['time'] >= cutoff_time
+                    ]
+                    
+                    # 计算平均速度（使用最近5秒内的样本）
+                    if len(progress_data['speed_samples']) >= 2:
+                        # 有足够样本时，使用滑动窗口平均
+                        total_speed = sum(s['speed'] for s in progress_data['speed_samples'])
+                        avg_speed = total_speed / len(progress_data['speed_samples'])
+                        progress_data['speed'] = avg_speed
+                    elif len(progress_data['speed_samples']) == 1:
+                        # 只有一个样本时，直接使用
+                        progress_data['speed'] = instant_speed
+                    else:
+                        # 没有样本时，使用总平均速度作为后备
+                        total_time = current_time - progress_data['start_time']
+                        if total_time > 0 and downloaded > 0:
+                            progress_data['speed'] = downloaded / total_time
+                        else:
+                            progress_data['speed'] = instant_speed
+                    
+                    # 更新最后更新时间
+                    progress_data['last_update_time'] = current_time
+                    progress_data['last_downloaded'] = downloaded
+                elif time_diff >= 2.0:
+                    # 如果超过2秒没有新数据，使用总平均速度
+                    total_time = current_time - progress_data['start_time']
+                    if total_time > 0 and downloaded > 0:
+                        progress_data['speed'] = downloaded / total_time
+                    else:
+                        progress_data['speed'] = 0
+                    # 更新最后更新时间，避免频繁计算
+                    progress_data['last_update_time'] = current_time
+        
+        # 下载文件
+        download_result = download_xapk(url, temp_path, progress_callback)
+        
+        if not download_result['success']:
+            download_progress[task_id]['status'] = 'error'
+            download_progress[task_id]['error'] = download_result['error']
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            return
+        
+        # 解压并读取 manifest.json 获取 package_name
+        extract_dir = tempfile.mkdtemp(dir=settings.TEMP_ROOT)
+        try:
+            extract_result = extract_xapk(temp_path, extract_dir)
+            
+            if not extract_result['success'] or not extract_result.get('package_name'):
+                package_name = f'downloaded_{os.urandom(8).hex()}'
+            else:
+                package_name = extract_result['package_name']
+            
+            # 最终文件路径
+            final_file_name = f'{package_name}.xapk'
+            final_file_path = os.path.join(save_dir, final_file_name)
+            
+            if os.path.exists(final_file_path):
+                timestamp = int(time.time())
+                final_file_name = f'{package_name}_{timestamp}.xapk'
+                final_file_path = os.path.join(save_dir, final_file_name)
+            
+            # 重命名临时文件
+            os.rename(temp_path, final_file_path)
+            
+            download_progress[task_id]['status'] = 'completed'
+            download_progress[task_id]['file_path'] = final_file_path
+            download_progress[task_id]['file_name'] = final_file_name
+            download_progress[task_id]['downloaded'] = download_progress[task_id]['total']
+        finally:
+            if os.path.exists(extract_dir):
+                shutil.rmtree(extract_dir)
+            if os.path.exists(temp_path) and temp_path != final_file_path:
+                os.remove(temp_path)
+                
+    except Exception as e:
+        download_progress[task_id]['status'] = 'error'
+        download_progress[task_id]['error'] = str(e)
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+
+
 @api_view(['POST'])
 def download_xapk_file(request):
     """
-    下载 XAPK 文件
+    启动 XAPK 文件下载任务
     
     Request body:
         {
-            'url': str  # XAPK 文件的下载地址
+            'url': str,  # XAPK 文件的下载地址（可选）
+            'package_name': str  # 应用包名（可选，如果提供则通过包名下载）
         }
     
     Returns:
         Response: {
             'success': bool,
+            'task_id': str,
             'message': str,
-            'file_path': str,
-            'file_name': str,
             'error': str
         }
     """
     url = request.data.get('url')
+    package_name = request.data.get('package_name')
     
+    # 如果提供了包名，构建下载 URL
+    if package_name:
+        if not package_name.strip():
+            return Response({
+                'success': False,
+                'task_id': None,
+                'message': '参数不完整',
+                'error': '包名不能为空'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 验证包名格式
+        if not re.match(r'^[a-zA-Z][a-zA-Z0-9_.]*$', package_name):
+            return Response({
+                'success': False,
+                'task_id': None,
+                'message': '包名格式错误',
+                'error': '包名应以字母开头，只能包含字母、数字、点和下划线'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 构建下载 URL
+        url = f'https://d.apkpure.com/b/XAPK/{package_name}?version=latest'
+    
+    # 如果没有 URL 也没有包名，返回错误
     if not url:
         return Response({
             'success': False,
+            'task_id': None,
             'message': '参数不完整',
-            'error': '缺少 url 参数'
+            'error': '缺少 url 或 package_name 参数'
         }, status=status.HTTP_400_BAD_REQUEST)
     
     # 验证 URL 格式
     if not url.startswith(('http://', 'https://')):
         return Response({
             'success': False,
+            'task_id': None,
             'message': 'URL 格式错误',
             'error': 'URL 必须以 http:// 或 https:// 开头'
         }, status=status.HTTP_400_BAD_REQUEST)
@@ -246,77 +410,101 @@ def download_xapk_file(request):
     save_dir = os.path.join(settings.MEDIA_ROOT, 'xapk')
     os.makedirs(save_dir, exist_ok=True)
     
-    # 先下载到临时文件
+    # 生成任务 ID
+    task_id = str(uuid.uuid4())
+    
+    # 创建临时文件路径
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.xapk', dir=save_dir)
     temp_path = temp_file.name
     temp_file.close()
     
-    try:
-        # 下载文件
-        download_result = download_xapk(url, temp_path)
-        
-        if not download_result['success']:
-            # 清理临时文件
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-            return Response({
-                'success': False,
-                'message': download_result['message'],
-                'file_path': None,
-                'file_name': None,
-                'error': download_result['error']
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        # 解压并读取 manifest.json 获取 package_name
-        extract_dir = tempfile.mkdtemp(dir=settings.TEMP_ROOT)
-        try:
-            extract_result = extract_xapk(temp_path, extract_dir)
-            
-            if not extract_result['success'] or not extract_result.get('package_name'):
-                # 如果无法获取 package_name，使用默认名称
-                package_name = f'downloaded_{os.urandom(8).hex()}'
-            else:
-                package_name = extract_result['package_name']
-            
-            # 最终文件路径（以 package_name 命名）
-            final_file_name = f'{package_name}.xapk'
-            final_file_path = os.path.join(save_dir, final_file_name)
-            
-            # 如果文件已存在，添加时间戳
-            if os.path.exists(final_file_path):
-                timestamp = int(time.time())
-                final_file_name = f'{package_name}_{timestamp}.xapk'
-                final_file_path = os.path.join(save_dir, final_file_name)
-            
-            # 重命名临时文件为最终文件名
-            os.rename(temp_path, final_file_path)
-            
-            return Response({
-                'success': True,
-                'message': '下载成功',
-                'file_path': final_file_path,
-                'file_name': final_file_name,
-                'error': None
-            })
-        finally:
-            # 清理临时解压目录
-            if os.path.exists(extract_dir):
-                shutil.rmtree(extract_dir)
-            # 如果临时文件还存在（重命名失败），删除它
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-                
-    except Exception as e:
-        # 确保清理临时文件
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+    # 启动异步下载任务
+    thread = threading.Thread(
+        target=_download_xapk_task,
+        args=(task_id, url, temp_path, save_dir),
+        daemon=True
+    )
+    thread.start()
+    
+    return Response({
+        'success': True,
+        'task_id': task_id,
+        'message': '下载任务已启动',
+        'error': None
+    })
+
+
+@api_view(['GET'])
+def get_download_progress(request):
+    """
+    获取下载进度
+    
+    Query params:
+        task_id: str  # 任务 ID
+    
+    Returns:
+        Response: {
+            'success': bool,
+            'downloaded': int,
+            'total': int,
+            'percent': float,
+            'speed': float,  # bytes per second
+            'status': str,  # 'downloading', 'completed', 'error'
+            'file_path': str,
+            'file_name': str,
+            'error': str
+        }
+    """
+    task_id = request.query_params.get('task_id')
+    
+    if not task_id:
         return Response({
             'success': False,
-            'message': '下载或处理失败',
-            'file_path': None,
-            'file_name': None,
-            'error': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            'error': '缺少 task_id 参数'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    if task_id not in download_progress:
+        return Response({
+            'success': False,
+            'error': '任务不存在'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    progress_data = download_progress[task_id]
+    
+    # 计算百分比
+    percent = 0
+    if progress_data['total'] > 0:
+        percent = (progress_data['downloaded'] / progress_data['total']) * 100
+    
+    result = {
+        'success': True,
+        'downloaded': progress_data['downloaded'],
+        'total': progress_data['total'],
+        'percent': round(percent, 2),
+        'speed': progress_data['speed'],
+        'status': progress_data['status'],
+        'error': progress_data.get('error')
+    }
+    
+    # 如果完成或出错，添加文件信息
+    if progress_data['status'] == 'completed':
+        result['file_path'] = progress_data['file_path']
+        result['file_name'] = progress_data['file_name']
+        # 清理进度数据（延迟清理，给前端一些时间获取最终结果）
+        def cleanup():
+            time.sleep(10)  # 10秒后清理
+            if task_id in download_progress:
+                del download_progress[task_id]
+        threading.Thread(target=cleanup, daemon=True).start()
+    elif progress_data['status'] == 'error':
+        # 错误时也清理
+        def cleanup():
+            time.sleep(5)  # 5秒后清理
+            if task_id in download_progress:
+                del download_progress[task_id]
+        threading.Thread(target=cleanup, daemon=True).start()
+    
+    return Response(result)
 
 
 @api_view(['POST'])
