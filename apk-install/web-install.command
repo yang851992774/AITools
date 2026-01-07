@@ -23,8 +23,27 @@ pip install -r requirements.txt
 echo "运行数据库迁移..."
 python manage.py migrate
 
-# 启动服务器
+# 启动服务器（后台运行）
 echo "启动开发服务器..."
 echo "访问地址: http://127.0.0.1:8000"
-python manage.py runserver
+python manage.py runserver &
+
+# 等待服务器启动
+echo "等待服务器启动..."
+sleep 3
+
+# 根据操作系统启动默认浏览器并打开服务地址
+if command -v xdg-open >/dev/null 2>&1; then
+    xdg-open http://127.0.0.1:8000/ &
+elif command -v open >/dev/null 2>&1; then
+    open http://127.0.0.1:8000/ &
+elif command -v start >/dev/null 2>&1; then
+    start http://127.0.0.1:8000/ &
+else
+    echo "请手动在浏览器中打开: http://127.0.0.1:8000/"
+fi
+
+# 等待服务器进程（保持脚本运行）
+wait
+
 
