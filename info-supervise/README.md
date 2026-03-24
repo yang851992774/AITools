@@ -18,6 +18,10 @@
 - **事件筛选增强**：事件列表支持按类型、状态筛选，并支持分页。
 - **应用搜索**：支持按名称 / 包名 / Bundle ID 模糊搜索。
 - **CSV 导出**：一键导出应用列表为 CSV 文件。
+- **商店API防封禁**：请求抖动延迟、指数退避重试、429/403冷却窗口、UA池轮换、可选代理池、Google Play Browser Fallback。
+- **自适应采集频率**：连续无变化应用自动降频，发生变化后恢复高频，减少无效请求。
+- **区域分批轮询**：避免同一时刻全量打满所有区域，降低商店侧风控触发率。
+- **采集健康监控**：429/403 率、错误率超阈值自动产生告警事件并推送飞书，日报包含采集健康摘要。
 - 保存快照、当前状态、事件流水、通知记录和任务执行日志。
 - 支持 `FastAPI + APScheduler + PostgreSQL + Redis + Docker Compose` 部署。
 
@@ -67,6 +71,18 @@ docker compose up --build -d
 - `NOTIFICATION_INTERVAL_MINUTES`: 通知投递周期
 - `DIGEST_ENABLED`: 是否启用每日摘要报告（`true` / `false`）
 - `DIGEST_HOUR`: 摘要报告发送时间（UTC 小时，默认 10）
+- `STORE_REQUEST_MIN_DELAY_MS`: 请求间最小延迟毫秒（默认 800）
+- `STORE_REQUEST_JITTER_MS`: 请求间随机抖动毫秒（默认 1200）
+- `STORE_MAX_RETRIES`: 失败最大重试次数（默认 3）
+- `STORE_RETRY_BACKOFF_MS`: 重试初始退避毫秒（默认 2000，指数增长）
+- `STORE_COOLDOWN_MINUTES`: 触发冷却窗口时长分钟（默认 15）
+- `STORE_ADAPTIVE_NO_CHANGE_THRESHOLD`: 连续无变化N次后开始降频（默认 5）
+- `STORE_ADAPTIVE_MAX_INTERVAL_MULTIPLIER`: 降频最大倍数（默认 4）
+- `STORE_PROXY_URLS`: 可选代理池（逗号分隔），留空不使用代理
+- `STORE_UA_POOL`: 自定义UA池（`|` 分隔），留空使用内置 7 个UA
+- `STORE_ALERT_RATE_LIMIT_PCT`: 429/403告警阈值百分比（默认 15）
+- `STORE_ALERT_ERROR_PCT`: 错误告警阈值百分比（默认 20）
+- `STORE_ALERT_MIN_REQUESTS`: 触发告警所需最小请求数（默认 5）
 
 ## 主要接口
 
@@ -83,6 +99,7 @@ docker compose up --build -d
 - `GET /events`（兼容旧接口）
 - `GET /events/paged?page=1&page_size=20&event_type=app_version_updated&status=sent`
 - `GET /dashboard/summary`
+- `GET /dashboard/fetch-stats`（当前采集请求统计）
 - `GET /jobs/runs`
 - `POST /jobs/run`（支持 `generate_digest` 任务）
 
@@ -159,6 +176,17 @@ curl -X POST http://localhost:8000/jobs/run \
 - 评分变动：系统会在评分变化 ≥ 0.2 时生成 `app_rating_changed` 事件
 - 更新日志：当 `release_notes` 内容变化时生成 `app_release_notes_changed` 事件
 - 飞书通知现在使用 Interactive Card 格式，包含图标、关键字段和商店跳转按钮
+
+防封禁 & 采集健康说明：
+- 每次请求前加入随机延迟（`MIN_DELAY + 0~JITTER` 毫秒），避免固定间隔被识别
+- 遇到 429/403 自动指数退避重试，重试耗尽后进入冷却窗口（默认 15 分钟内不再请求该商店）
+- 内置 7 个 User-Agent 随机轮换，也可通过 `STORE_UA_POOL` 自定义
+- 可通过 `STORE_PROXY_URLS` 配置代理池，请求时随机选择代理
+- Google Play 被封禁时可自动降级到 Playwright 浏览器抓取（需 `ENABLE_BROWSER_FALLBACK=true`）
+- 连续无变化的应用会自适应降频（间隔逐步扩大到最多 4 倍），有变化后自动恢复
+- 多区域分批轮询，避免短时大量并发
+- 每次采集完成后检查 429 率和错误率，超阈值自动产生告警事件推送飞书
+- 日报包含"采集健康摘要"：成功率、429 次数、错误数等关键指标
 
 页面编辑/删除说明：
 - 点击应用列表或厂商列表中的 `编辑`，会把当前记录回填到上方表单并切换到编辑模式

@@ -4,13 +4,14 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote_plus
 
-import httpx
-
 from app.core.config import get_settings
 from app.schemas.common import PublisherAppRecord, PublisherDiscoveryResult, StoreEnum, StoreFetchResult
+from app.services.store_clients.http_client import resilient_get
 
 
 class AppStoreClient:
+    STORE_KEY = "app_store"
+
     def __init__(self) -> None:
         self.settings = get_settings()
         self.timeout = self.settings.request_timeout_seconds
@@ -30,10 +31,14 @@ class AppStoreClient:
         else:
             raise ValueError("bundle_id or app_id is required for App Store monitoring")
 
-        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
-            response = await client.get("https://itunes.apple.com/lookup", params=params)
-            response.raise_for_status()
-            payload = response.json()
+        response = await resilient_get(
+            "https://itunes.apple.com/lookup",
+            store=self.STORE_KEY,
+            params=params,
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        payload = response.json()
 
         results = payload.get("results", [])
         record = results[0] if results else None
@@ -102,10 +107,14 @@ class AppStoreClient:
             "entity": "software",
             "limit": 200,
         }
-        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
-            response = await client.get("https://itunes.apple.com/search", params=params)
-            response.raise_for_status()
-            payload = response.json()
+        response = await resilient_get(
+            "https://itunes.apple.com/search",
+            store=self.STORE_KEY,
+            params=params,
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        payload = response.json()
 
         apps: list[PublisherAppRecord] = []
         raw_payload: list[dict] = []

@@ -33,6 +33,19 @@ class Settings(BaseSettings):
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
     )
 
+    store_request_min_delay_ms: int = 800
+    store_request_jitter_ms: int = 1200
+    store_max_retries: int = 3
+    store_retry_backoff_ms: int = 2000
+    store_cooldown_minutes: int = 15
+    store_adaptive_no_change_threshold: int = 5
+    store_adaptive_max_interval_multiplier: int = 4
+    store_proxy_urls: str = ""
+    store_ua_pool: str = ""
+    store_alert_rate_limit_pct: int = 15
+    store_alert_error_pct: int = 20
+    store_alert_min_requests: int = 5
+
     feishu_webhook_url: str | None = None
     feishu_secret: str | None = None
 
@@ -42,6 +55,24 @@ class Settings(BaseSettings):
     @property
     def normalized_regions(self) -> list[str]:
         return [region.strip().upper() for region in self.default_regions.split(",") if region.strip()]
+
+    @property
+    def proxy_url_list(self) -> list[str]:
+        return [u.strip() for u in self.store_proxy_urls.split(",") if u.strip()]
+
+    @property
+    def ua_pool_list(self) -> list[str]:
+        defaults = [
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0",
+        ]
+        custom = [u.strip() for u in self.store_ua_pool.split("|") if u.strip()]
+        return custom if custom else defaults
 
 
 @lru_cache(maxsize=1)

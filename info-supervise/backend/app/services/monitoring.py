@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from time import perf_counter
 
@@ -33,6 +35,9 @@ from app.services.notifiers.feishu import FeishuNotifier
 from app.services.publisher_discovery import PublisherDiscoveryService
 from app.services.store_clients.app_store import AppStoreClient
 from app.services.store_clients.google_play import GooglePlayClient
+from app.services.store_clients.http_client import get_global_stats, reset_global_stats
+
+logger = logging.getLogger(__name__)
 
 
 class MonitoringService:
@@ -412,45 +417,177 @@ class MonitoringService:
 
     async def run_app_checks(self) -> dict:
         async def _job() -> dict:
-            apps = await self.session.scalars(
-                select(WatchedApp).where(WatchedApp.monitoring_enabled.is_(True)).order_by(WatchedApp.created_at.asc())
+            stats = reset_global_stats()
+            apps = list(
+                (
+                    await self.session.scalars(
+                        select(WatchedApp).where(WatchedApp.monitoring_enabled.is_(True)).order_by(WatchedApp.created_at.asc())
+                    )
+                ).all()
             )
             checked = 0
             emitted = 0
-            for watched_app in apps.all():
-                for region in watched_app.regions or self.settings.normalized_regions:
-                    result = await self._fetch_app_result(watched_app=watched_app, region=region)
-                    events = await self.diff_engine.apply_app_result(self.session, watched_app, result)
-                    checked += 1
-                    emitted += len(events)
+            skipped = 0
+            now = datetime.now(timezone.utc)
+            region_batch_size = 3
+
+            for watched_app in apps:
+                status = await self.session.scalar(
+                    select(AppStatusCurrent).where(AppStatusCurrent.watched_app_id == watched_app.id)
+                )
+                if self._should_skip_adaptive(status, watched_app, now):
+                    skipped += 1
+                    continue
+
+                regions = watched_app.regions or self.settings.normalized_regions
+                for i in range(0, len(regions), region_batch_size):
+                    batch = regions[i : i + region_batch_size]
+                    for region in batch:
+                        result = await self._fetch_app_result(watched_app=watched_app, region=region)
+                        events = await self.diff_engine.apply_app_result(self.session, watched_app, result)
+                        checked += 1
+                        emitted += len(events)
+                    if i + region_batch_size < len(regions):
+                        await asyncio.sleep(1.0)
                 await self.session.commit()
-            return {"checks": checked, "events": emitted}
+            alerts = await self._check_fetch_health_and_alert(stats)
+            return {
+                "checks": checked,
+                "events": emitted,
+                "skipped_adaptive": skipped,
+                "health_alerts": alerts,
+                "fetch_stats": stats.to_dict(),
+            }
 
         return await self._run_job_with_audit(JobNameEnum.MONITOR_APPS.value, _job)
 
+    async def _check_fetch_health_and_alert(self, stats: StoreStats) -> int:
+        """Check per-store health metrics and emit alert events if thresholds exceeded."""
+        alert_count = 0
+        min_req = self.settings.store_alert_min_requests
+        rl_pct = self.settings.store_alert_rate_limit_pct
+        err_pct = self.settings.store_alert_error_pct
+
+        for store_name, fs in stats.stores.items():
+            if fs.requests < min_req:
+                continue
+
+            rl_rate = round((fs.rate_limited + fs.forbidden) / fs.requests * 100, 1)
+            err_rate = round(fs.errors / fs.requests * 100, 1)
+            success_rate = round(fs.successes / fs.requests * 100, 1)
+
+            if rl_rate >= rl_pct:
+                event = Event(
+                    event_type="store_rate_limit_alert",
+                    store=store_name,
+                    payload={
+                        "alert": "rate_limit_threshold_exceeded",
+                        "rate_limited_pct": rl_rate,
+                        "threshold_pct": rl_pct,
+                        "requests": fs.requests,
+                        "rate_limited": fs.rate_limited,
+                        "forbidden": fs.forbidden,
+                        "cooldowns": fs.cooldowns_triggered,
+                        "success_rate_pct": success_rate,
+                    },
+                    dedupe_key=f"store-rl-alert:{store_name}:{datetime.now(timezone.utc).strftime('%Y%m%d%H')}",
+                    status="pending",
+                    created_at=datetime.now(timezone.utc),
+                )
+                self.session.add(event)
+                alert_count += 1
+                logger.warning(
+                    "Rate-limit alert for %s: %.1f%% (threshold %d%%)",
+                    store_name, rl_rate, rl_pct,
+                )
+
+            if err_rate >= err_pct:
+                event = Event(
+                    event_type="store_error_alert",
+                    store=store_name,
+                    payload={
+                        "alert": "error_threshold_exceeded",
+                        "error_pct": err_rate,
+                        "threshold_pct": err_pct,
+                        "requests": fs.requests,
+                        "errors": fs.errors,
+                        "success_rate_pct": success_rate,
+                    },
+                    dedupe_key=f"store-err-alert:{store_name}:{datetime.now(timezone.utc).strftime('%Y%m%d%H')}",
+                    status="pending",
+                    created_at=datetime.now(timezone.utc),
+                )
+                self.session.add(event)
+                alert_count += 1
+                logger.warning(
+                    "Error alert for %s: %.1f%% (threshold %d%%)",
+                    store_name, err_rate, err_pct,
+                )
+
+        if alert_count:
+            await self.session.commit()
+        return alert_count
+
+    def _should_skip_adaptive(self, status: AppStatusCurrent | None, app: WatchedApp, now: datetime) -> bool:
+        if not status or not status.last_checked_at:
+            return False
+        threshold = self.settings.store_adaptive_no_change_threshold
+        no_change = status.consecutive_no_change or 0
+        if no_change < threshold:
+            return False
+        multiplier = min(
+            1 + (no_change - threshold) // threshold,
+            self.settings.store_adaptive_max_interval_multiplier,
+        )
+        base_interval = app.check_interval_minutes or self.settings.app_monitor_interval_minutes
+        effective_minutes = base_interval * multiplier
+        next_check = status.last_checked_at + timedelta(minutes=effective_minutes)
+        if now < next_check:
+            logger.debug(
+                "Adaptive skip: app=%s no_change=%d multiplier=%dx next=%s",
+                app.display_name or app.id,
+                no_change,
+                multiplier,
+                next_check.isoformat(),
+            )
+            return True
+        return False
+
     async def run_publisher_discovery(self) -> dict:
         async def _job() -> dict:
-            publishers = await self.session.scalars(
-                select(WatchedPublisher)
-                .where(WatchedPublisher.monitoring_enabled.is_(True))
-                .order_by(WatchedPublisher.created_at.asc())
+            stats = reset_global_stats()
+            publishers = list(
+                (
+                    await self.session.scalars(
+                        select(WatchedPublisher)
+                        .where(WatchedPublisher.monitoring_enabled.is_(True))
+                        .order_by(WatchedPublisher.created_at.asc())
+                    )
+                ).all()
             )
             checked = 0
             emitted = 0
-            for publisher in publishers.all():
-                for region in publisher.regions or self.settings.normalized_regions:
-                    result = await self._discover_publisher_result(publisher=publisher, region=region)
-                    events = await self.publisher_discovery.apply_discovery_result(
-                        self.session,
-                        publisher,
-                        region,
-                        result.apps,
-                        result.raw_payload,
-                    )
-                    checked += 1
-                    emitted += len(events)
+            region_batch_size = 2
+            for publisher in publishers:
+                regions = publisher.regions or self.settings.normalized_regions
+                for i in range(0, len(regions), region_batch_size):
+                    batch = regions[i : i + region_batch_size]
+                    for region in batch:
+                        result = await self._discover_publisher_result(publisher=publisher, region=region)
+                        events = await self.publisher_discovery.apply_discovery_result(
+                            self.session,
+                            publisher,
+                            region,
+                            result.apps,
+                            result.raw_payload,
+                        )
+                        checked += 1
+                        emitted += len(events)
+                    if i + region_batch_size < len(regions):
+                        await asyncio.sleep(1.5)
                 await self.session.commit()
-            return {"checks": checked, "events": emitted}
+            alerts = await self._check_fetch_health_and_alert(stats)
+            return {"checks": checked, "events": emitted, "health_alerts": alerts, "fetch_stats": stats.to_dict()}
 
         return await self._run_job_with_audit(JobNameEnum.DISCOVER_PUBLISHERS.value, _job)
 
@@ -503,29 +640,34 @@ class MonitoringService:
     async def generate_digest(self) -> dict:
         async def _job() -> dict:
             cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+
             events_q = await self.session.scalars(
                 select(Event).where(Event.created_at >= cutoff).order_by(Event.created_at.asc())
             )
             all_events = list(events_q.all())
-            if not all_events:
-                return {"events": 0, "sent": False}
 
             type_counts: dict[str, int] = {}
             for ev in all_events:
                 label = self._EVENT_TYPE_LABELS.get(ev.event_type, ev.event_type)
                 type_counts[label] = type_counts.get(label, 0) + 1
 
-            lines = [f"- {label}: **{count}** 条" for label, count in type_counts.items()]
-            summary_text = "\n".join(lines)
+            event_lines = [f"- {label}: **{count}** 条" for label, count in type_counts.items()]
+            event_summary = "\n".join(event_lines) if event_lines else "- 无事件"
+
+            health_summary = await self._build_health_summary(cutoff)
+
+            elements: list[dict] = [
+                {"tag": "div", "text": {"tag": "lark_md", "content": f"**事件汇总** (共 {len(all_events)} 条)\n{event_summary}"}},
+                {"tag": "hr"},
+                {"tag": "div", "text": {"tag": "lark_md", "content": health_summary}},
+            ]
 
             card = {
                 "header": {
-                    "title": {"tag": "plain_text", "content": f"监控日报 | 过去 24h 共 {len(all_events)} 条事件"},
+                    "title": {"tag": "plain_text", "content": f"监控日报 | 过去 24h"},
                     "template": "indigo",
                 },
-                "elements": [
-                    {"tag": "div", "text": {"tag": "lark_md", "content": summary_text}},
-                ],
+                "elements": elements,
             }
 
             channels = await self.session.scalars(
@@ -546,6 +688,56 @@ class MonitoringService:
             return {"events": len(all_events), "sent": sent}
 
         return await self._run_job_with_audit(JobNameEnum.GENERATE_DIGEST.value, _job)
+
+    async def _build_health_summary(self, cutoff: datetime) -> str:
+        job_runs = list(
+            (
+                await self.session.scalars(
+                    select(JobRun).where(
+                        JobRun.started_at >= cutoff,
+                        JobRun.job_name.in_(["monitor_apps", "discover_publishers"]),
+                    ).order_by(desc(JobRun.started_at))
+                )
+            ).all()
+        )
+
+        if not job_runs:
+            return "**采集健康** ✅\n- 过去 24h 无采集作业运行"
+
+        total_runs = len(job_runs)
+        completed = sum(1 for j in job_runs if j.status == "completed")
+        failed = sum(1 for j in job_runs if j.status == "failed")
+
+        total_requests = 0
+        total_429 = 0
+        total_403 = 0
+        total_errors = 0
+        total_cooldowns = 0
+        for j in job_runs:
+            fs = (j.detail_json or {}).get("fetch_stats", {})
+            for store_stats in fs.values():
+                total_requests += store_stats.get("requests", 0)
+                total_429 += store_stats.get("rate_limited", 0)
+                total_403 += store_stats.get("forbidden", 0)
+                total_errors += store_stats.get("errors", 0)
+                total_cooldowns += store_stats.get("cooldowns_triggered", 0)
+
+        success_pct = round((total_requests - total_429 - total_403 - total_errors) / max(total_requests, 1) * 100, 1)
+        status_icon = "✅" if success_pct >= 95 else "⚠️" if success_pct >= 80 else "🔴"
+
+        lines = [
+            f"**采集健康** {status_icon}",
+            f"- 作业运行: {total_runs} 次 (成功 {completed}, 失败 {failed})",
+            f"- 总请求: {total_requests}",
+            f"- 成功率: {success_pct}%",
+            f"- 429/限流: {total_429}",
+            f"- 403/禁止: {total_403}",
+            f"- 错误: {total_errors}",
+        ]
+        if total_cooldowns:
+            lines.append(f"- 冷却触发: {total_cooldowns} 次")
+
+        return "\n".join(lines)
 
     async def list_events_paged(
         self,
@@ -725,19 +917,25 @@ class MonitoringService:
         "publisher_new_game_detected": "厂商新游上架",
         "metadata_changed_significantly": "元数据变更",
         "monitor_failed_repeatedly": "监控连续失败",
+        "store_rate_limit_alert": "商店限流告警",
+        "store_error_alert": "商店错误告警",
     }
 
     def _format_event_card(self, event: Event) -> dict:
         payload = event.payload or {}
         app = payload.get("app") or {}
-        identity = (
-            payload.get("display_name")
-            or app.get("name")
-            or payload.get("package_name")
-            or payload.get("bundle_id")
-            or payload.get("app_id")
-            or "未知"
-        )
+
+        if event.event_type in ("store_rate_limit_alert", "store_error_alert"):
+            identity = payload.get("alert", "系统告警")
+        else:
+            identity = (
+                payload.get("display_name")
+                or app.get("name")
+                or payload.get("package_name")
+                or payload.get("bundle_id")
+                or payload.get("app_id")
+                or "未知"
+            )
         event_label = self._EVENT_TYPE_LABELS.get(event.event_type, event.event_type)
         store_label = "Google Play" if event.store == "google_play" else "App Store"
 
@@ -760,6 +958,18 @@ class MonitoringService:
             rc = payload.get("rating_count")
             if rc is not None:
                 fields.append({"is_short": True, "text": {"tag": "lark_md", "content": f"**评分人数**\n{rc:,}"}})
+
+        if event.event_type in ("store_rate_limit_alert", "store_error_alert"):
+            if payload.get("rate_limited_pct") is not None:
+                fields.append({"is_short": True, "text": {"tag": "lark_md", "content": f"**限流率**\n{payload['rate_limited_pct']}%"}})
+            if payload.get("error_pct") is not None:
+                fields.append({"is_short": True, "text": {"tag": "lark_md", "content": f"**错误率**\n{payload['error_pct']}%"}})
+            if payload.get("requests") is not None:
+                fields.append({"is_short": True, "text": {"tag": "lark_md", "content": f"**请求数**\n{payload['requests']}"}})
+            if payload.get("success_rate_pct") is not None:
+                fields.append({"is_short": True, "text": {"tag": "lark_md", "content": f"**成功率**\n{payload['success_rate_pct']}%"}})
+            if payload.get("cooldowns"):
+                fields.append({"is_short": True, "text": {"tag": "lark_md", "content": f"**冷却触发**\n{payload['cooldowns']} 次"}})
 
         if payload.get("developer_name"):
             fields.append({"is_short": True, "text": {"tag": "lark_md", "content": f"**开发者**\n{payload['developer_name']}"}})
@@ -793,7 +1003,7 @@ class MonitoringService:
 
         header: dict = {
             "title": {"tag": "plain_text", "content": f"{event_label} | {identity}"},
-            "template": "blue" if "visible" in event.event_type else "red" if "removed" in event.event_type or "failed" in event.event_type else "turquoise",
+            "template": "orange" if "alert" in event.event_type else "blue" if "visible" in event.event_type else "red" if "removed" in event.event_type or "failed" in event.event_type else "turquoise",
         }
         if icon_url:
             header["icon"] = {"tag": "custom_icon", "img_key": icon_url}

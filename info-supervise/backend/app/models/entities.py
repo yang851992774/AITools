@@ -109,6 +109,7 @@ class AppStatusCurrent(Base):
     last_file_size: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_content_rating: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_store_updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    consecutive_no_change: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

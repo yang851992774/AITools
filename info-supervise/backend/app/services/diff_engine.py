@@ -247,6 +247,11 @@ class DiffEngine:
         status.visible_regions = sorted(visible_regions)
         status.invisible_regions = sorted(invisible_regions)
 
+        if events:
+            status.consecutive_no_change = 0
+        else:
+            status.consecutive_no_change = (status.consecutive_no_change or 0) + 1
+
         for event in events:
             session.add(event)
         return events
