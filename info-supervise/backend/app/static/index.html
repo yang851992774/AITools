@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Info Supervise Dashboard</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #111827;
+        --muted: #94a3b8;
+        --text: #e5e7eb;
+        --accent: #22c55e;
+        --accent-2: #38bdf8;
+        --danger: #ef4444;
+        --border: #1f2937;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: linear-gradient(180deg, #020617 0%, #0f172a 100%);
+        color: var(--text);
+      }
+
+      .page {
+        max-width: 1320px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      .hero {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: end;
+        margin-bottom: 24px;
+      }
+
+      .hero p {
+        color: var(--muted);
+        margin-bottom: 0;
+      }
+
+      .grid {
+        display: grid;
+        gap: 16px;
+      }
+
+      .grid.cols-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .grid.cols-4 {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .card {
+        background: rgba(17, 24, 39, 0.9);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 18px;
+        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.2);
+      }
+
+      .metric {
+        font-size: 28px;
+        font-weight: 700;
+      }
+
+      .metric-label,
+      .hint,
+      .muted {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      form {
+        display: grid;
+        gap: 12px;
+      }
+
+      .form-row {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        font-size: 14px;
+      }
+
+      input,
+      select,
+      textarea,
+      button {
+        border-radius: 10px;
+        border: 1px solid #334155;
+        background: #0b1220;
+        color: var(--text);
+        padding: 10px 12px;
+        font: inherit;
+      }
+
+      textarea {
+        min-height: 88px;
+        resize: vertical;
+      }
+
+      button {
+        cursor: pointer;
+        background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 100%);
+        color: #04111f;
+        font-weight: 700;
+        border: none;
+      }
+
+      button.secondary {
+        background: #172554;
+        color: #dbeafe;
+        border: 1px solid #1d4ed8;
+      }
+
+      button.danger {
+        background: #7f1d1d;
+        color: #fee2e2;
+      }
+
+      .toolbar {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .toolbar.actions {
+        margin-top: 4px;
+      }
+
+      .form-meta {
+        color: var(--muted);
+        font-size: 13px;
+        margin-bottom: 8px;
+      }
+
+      .readonly-note {
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: rgba(30, 41, 59, 0.8);
+        border: 1px solid #334155;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .inline-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .inline-actions button {
+        padding: 6px 10px;
+        font-size: 12px;
+      }
+
+      .pager {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-top: 12px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .pager-controls {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+
+      .pager-controls button {
+        padding: 6px 10px;
+        font-size: 12px;
+      }
+
+      .pager-controls button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      .pager-controls select {
+        padding: 4px 6px;
+        font-size: 12px;
+        background: #0b1220;
+        color: var(--text);
+        border: 1px solid #334155;
+        border-radius: 6px;
+      }
+
+      .status {
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: #052e16;
+        color: #bbf7d0;
+        margin-bottom: 12px;
+        display: none;
+      }
+
+      .status.error {
+        background: #450a0a;
+        color: #fecaca;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        text-align: left;
+        padding: 10px 8px;
+        border-bottom: 1px solid #1f2937;
+        vertical-align: top;
+        font-size: 13px;
+      }
+
+      .pill {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 4px 8px;
+        font-size: 12px;
+        background: #1e293b;
+        color: #cbd5e1;
+      }
+
+      .pill.ok {
+        background: #14532d;
+        color: #bbf7d0;
+      }
+
+      .pill.warn {
+        background: #78350f;
+        color: #fde68a;
+      }
+
+      .pill.err {
+        background: #7f1d1d;
+        color: #fecaca;
+      }
+
+      .section-title {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+
+      @media (max-width: 960px) {
+        .grid.cols-2,
+        .grid.cols-4,
+        .form-row {
+          grid-template-columns: 1fr;
+        }
+
+        .hero {
+          display: grid;
+          align-items: start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="hero">
+        <div>
+          <h1>游戏商店监控面板</h1>
+          <p>录入 Google Play / App Store 应用与厂商监控，手动触发任务并查看最近事件与通知状态。</p>
+        </div>
+        <div class="toolbar">
+          <button class="secondary" id="seed-gp">填 GP 样例</button>
+          <button class="secondary" id="seed-ios">填 App Store 样例</button>
+          <button class="secondary" id="seed-publisher">填厂商样例</button>
+          <button class="secondary" id="refresh-all">刷新数据</button>
+        </div>
+      </div>
+
+      <div id="status" class="status"></div>
+
+      <div class="grid cols-4" id="metrics"></div>
+
+      <div class="grid cols-2" style="margin-top: 16px">
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h2>应用监控录入</h2>
+              <p class="hint">Google Play 填包名；App Store 填 Bundle ID 或 App ID。编辑时主标识保持只读。</p>
+            </div>
+          </div>
+          <div class="form-meta" id="app-form-mode">当前：新增模式</div>
+          <form id="app-form">
+            <div class="form-row">
+              <label>
+                商店
+                <select name="store">
+                  <option value="google_play">Google Play</option>
+                  <option value="app_store">App Store</option>
+                </select>
+              </label>
+              <label>
+                显示名称
+                <input name="display_name" placeholder="例如 Clash of Clans" />
+              </label>
+            </div>
+            <div class="form-row">
+              <label>
+                包名
+                <input name="package_name" placeholder="com.supercell.clashofclans" />
+              </label>
+              <label>
+                Bundle ID
+                <input name="bundle_id" placeholder="com.supercell.magic" />
+              </label>
+            </div>
+            <div class="form-row">
+              <label>
+                App ID
+                <input name="app_id" placeholder="529479190" />
+              </label>
+              <label>
+                区域
+                <input name="regions" value="US,JP,KR" placeholder="US,JP,KR" />
+              </label>
+            </div>
+            <div class="form-row">
+              <label>
+                检查间隔（分钟）
+                <input name="check_interval_minutes" type="number" min="5" max="1440" value="30" />
+              </label>
+              <label>
+                监控状态
+                <select name="monitoring_enabled">
+                  <option value="true">开启</option>
+                  <option value="false">关闭</option>
+                </select>
+              </label>
+            </div>
+            <label>
+              <span>版本更新通知</span>
+              <select name="notify_on_version_update">
+                <option value="true">开启</option>
+                <option value="false">关闭</option>
+              </select>
+            </label>
+            <div id="app-readonly-note" class="readonly-note" style="display: none">
+              编辑模式下不支持直接修改商店与应用主标识，如需变更请删除后重新创建。
+            </div>
+            <div class="toolbar actions">
+              <button type="submit" id="app-submit-btn">新增应用监控</button>
+              <button type="button" class="secondary" id="app-cancel-btn" style="display: none">取消编辑</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <h2>厂商监控录入</h2>
+              <p class="hint">支持厂商名、可选主页 URL，并可自动把新游加入应用监控。</p>
+            </div>
+          </div>
+          <div class="form-meta" id="publisher-form-mode">当前：新增模式</div>
+          <form id="publisher-form">
+            <div class="form-row">
+              <label>
+                商店
+                <select name="store">
+                  <option value="app_store">App Store</option>
+                  <option value="google_play">Google Play</option>
+                </select>
+              </label>
+              <label>
+                厂商名
+                <input name="publisher_name" placeholder="Supercell" />
+              </label>
+            </div>
+            <div class="form-row">
+              <label>
+                厂商引用标识
+                <input name="publisher_ref" placeholder="可选，内部标识或开发者 ID" />
+              </label>
+              <label>
+                厂商主页 URL
+                <input name="publisher_url" placeholder="可选，Google Play 可填开发者页" />
+              </label>
+            </div>
+            <div class="form-row">
+              <label>
+                区域
+                <input name="regions" value="US,JP" placeholder="US,JP" />
+              </label>
+              <label>
+                监控状态
+                <select name="monitoring_enabled">
+                  <option value="true">开启</option>
+                  <option value="false">关闭</option>
+                </select>
+              </label>
+            </div>
+            <label>
+              <span>自动纳管新游戏</span>
+              <select name="auto_add_apps">
+                <option value="true">是</option>
+                <option value="false">否</option>
+              </select>
+            </label>
+            <label>
+              <span>自动纳管游戏版本更新通知</span>
+              <select name="auto_added_notify_on_version_update">
+                <option value="true">开启</option>
+                <option value="false">关闭</option>
+              </select>
+            </label>
+            <div id="publisher-readonly-note" class="readonly-note" style="display: none">
+              编辑模式下不建议变更商店类型；如需切换商店，请删除后重新创建。
+            </div>
+            <div class="toolbar actions">
+              <button type="submit" id="publisher-submit-btn">新增厂商监控</button>
+              <button type="button" class="secondary" id="publisher-cancel-btn" style="display: none">取消编辑</button>
+            </div>
+          </form>
+        </section>
+      </div>
+
+      <div class="card" style="margin-top: 16px">
+        <div class="section-title">
+          <div>
+            <h2>任务执行</h2>
+            <p class="hint">可手动触发一条完整链路：先监控应用，再发现厂商新游，最后投递飞书通知。</p>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button data-job="monitor_apps">执行应用监控</button>
+          <button data-job="discover_publishers">执行厂商发现</button>
+          <button data-job="deliver_notifications">执行通知发送</button>
+        </div>
+      </div>
+
+      <div class="grid cols-2" style="margin-top: 16px">
+        <section class="card">
+          <div class="section-title">
+            <h2>应用列表</h2>
+            <span class="muted" id="apps-pager-info">共 0 条</span>
+          </div>
+          <div style="overflow:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>应用</th>
+                  <th>商店</th>
+                  <th>区域</th>
+                  <th>当前版本</th>
+                  <th>版本更新通知</th>
+                  <th>最新状态</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="apps-table"></tbody>
+            </table>
+          </div>
+          <div class="pager" id="apps-pager"></div>
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <h2>厂商列表</h2>
+            <span class="muted" id="publishers-pager-info">共 0 条</span>
+          </div>
+          <div style="overflow:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>厂商</th>
+                  <th>商店</th>
+                  <th>区域</th>
+                  <th>自动纳管</th>
+                  <th>自动纳管版本更新</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="publishers-table"></tbody>
+            </table>
+          </div>
+          <div class="pager" id="publishers-pager"></div>
+        </section>
+      </div>
+
+      <div class="grid cols-2" style="margin-top: 16px">
+        <section class="card">
+          <div class="section-title">
+            <h2>最近事件</h2>
+            <span class="muted">支持飞书通知状态确认</span>
+          </div>
+          <div style="overflow:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>事件</th>
+                  <th>对象</th>
+                  <th>状态</th>
+                  <th>时间</th>
+                </tr>
+              </thead>
+              <tbody id="events-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <h2>任务记录</h2>
+            <span class="muted">最近 10 条</span>
+          </div>
+          <div style="overflow:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>任务</th>
+                  <th>状态</th>
+                  <th>耗时</th>
+                  <th>摘要</th>
+                </tr>
+              </thead>
+              <tbody id="jobs-table"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      const state = {
+        samples: null,
+        apps: [],
+        publishers: [],
+        editingAppId: null,
+        editingPublisherId: null,
+        appsPage: 1,
+        appsPageSize: 20,
+        appsTotalPages: 1,
+        appsTotal: 0,
+        publishersPage: 1,
+        publishersPageSize: 20,
+        publishersTotalPages: 1,
+        publishersTotal: 0,
+      };
+
+      function showStatus(message, isError = false) {
+        const el = document.getElementById("status");
+        el.textContent = message;
+        el.style.display = "block";
+        el.classList.toggle("error", isError);
+      }
+
+      function clearStatus() {
+        const el = document.getElementById("status");
+        el.style.display = "none";
+        el.textContent = "";
+        el.classList.remove("error");
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "-")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function formatList(value) {
+        if (!value || !value.length) return "-";
+        return value.join(", ");
+      }
+
+      function statusPill(status) {
+        const cls =
+          status === "sent" || status === "completed" || status === "enabled"
+            ? "ok"
+            : status === "failed"
+              ? "err"
+              : status === "pending" || status === "disabled"
+                ? "warn"
+                : "";
+        return `<span class="pill ${cls}">${escapeHtml(status ?? "-")}</span>`;
+      }
+
+      async function request(path, options = {}) {
+        const response = await fetch(path, {
+          headers: { "Content-Type": "application/json" },
+          ...options,
+        });
+        if (!response.ok) {
+          let detail = `${response.status} ${response.statusText}`;
+          try {
+            const payload = await response.json();
+            detail = payload.detail || JSON.stringify(payload);
+          } catch (_) {}
+          throw new Error(detail);
+        }
+        if (response.status === 204) {
+          return null;
+        }
+        return response.json();
+      }
+
+      function setAppReadonlyFields(disabled) {
+        const form = document.getElementById("app-form");
+        ["store", "package_name", "bundle_id", "app_id"].forEach((name) => {
+          form[name].disabled = disabled;
+        });
+        document.getElementById("app-readonly-note").style.display = disabled ? "block" : "none";
+      }
+
+      function setPublisherReadonlyFields(disabled) {
+        const form = document.getElementById("publisher-form");
+        form.store.disabled = disabled;
+        document.getElementById("publisher-readonly-note").style.display = disabled ? "block" : "none";
+      }
+
+      function setAppFormMode() {
+        const isEditing = Boolean(state.editingAppId);
+        document.getElementById("app-form-mode").textContent = isEditing
+          ? `当前：编辑模式（${state.editingAppId}）`
+          : "当前：新增模式";
+        document.getElementById("app-submit-btn").textContent = isEditing ? "保存修改" : "新增应用监控";
+        document.getElementById("app-cancel-btn").style.display = isEditing ? "inline-flex" : "none";
+        setAppReadonlyFields(isEditing);
+      }
+
+      function setPublisherFormMode() {
+        const isEditing = Boolean(state.editingPublisherId);
+        document.getElementById("publisher-form-mode").textContent = isEditing
+          ? `当前：编辑模式（${state.editingPublisherId}）`
+          : "当前：新增模式";
+        document.getElementById("publisher-submit-btn").textContent = isEditing ? "保存修改" : "新增厂商监控";
+        document.getElementById("publisher-cancel-btn").style.display = isEditing ? "inline-flex" : "none";
+        setPublisherReadonlyFields(isEditing);
+      }
+
+      function resetAppForm() {
+        const form = document.getElementById("app-form");
+        form.reset();
+        form.store.value = "google_play";
+        form.regions.value = "US,JP,KR";
+        form.notify_on_version_update.value = "true";
+        form.monitoring_enabled.value = "true";
+        form.check_interval_minutes.value = "30";
+        state.editingAppId = null;
+        setAppFormMode();
+      }
+
+      function resetPublisherForm() {
+        const form = document.getElementById("publisher-form");
+        form.reset();
+        form.store.value = "app_store";
+        form.regions.value = "US,JP";
+        form.auto_add_apps.value = "true";
+        form.auto_added_notify_on_version_update.value = "true";
+        form.monitoring_enabled.value = "true";
+        state.editingPublisherId = null;
+        setPublisherFormMode();
+      }
+
+      async function refreshDashboard() {
+        const data = await request("/dashboard/summary");
+        state.samples = data.samples;
+        renderMetrics(data.counts);
+        renderEvents(data.events);
+        renderJobs(data.job_runs);
+      }
+
+      async function loadAppsPage(page) {
+        if (page !== undefined) state.appsPage = page;
+        const data = await request(`/watch/apps?page=${state.appsPage}&page_size=${state.appsPageSize}`);
+        state.apps = data.items;
+        state.appsTotal = data.total;
+        state.appsTotalPages = data.total_pages;
+        state.appsPage = data.page;
+        renderApps(data.items);
+        renderPager("apps", state);
+      }
+
+      async function loadPublishersPage(page) {
+        if (page !== undefined) state.publishersPage = page;
+        const data = await request(`/watch/publishers?page=${state.publishersPage}&page_size=${state.publishersPageSize}`);
+        state.publishers = data.items;
+        state.publishersTotal = data.total;
+        state.publishersTotalPages = data.total_pages;
+        state.publishersPage = data.page;
+        renderPublishers(data.items);
+        renderPager("publishers", state);
+      }
+
+      function renderPager(kind, st) {
+        const page = kind === "apps" ? st.appsPage : st.publishersPage;
+        const total = kind === "apps" ? st.appsTotal : st.publishersTotal;
+        const totalPages = kind === "apps" ? st.appsTotalPages : st.publishersTotalPages;
+        const pageSize = kind === "apps" ? st.appsPageSize : st.publishersPageSize;
+
+        document.getElementById(`${kind}-pager-info`).textContent = `共 ${total} 条`;
+
+        const container = document.getElementById(`${kind}-pager`);
+        if (totalPages <= 1) {
+          container.innerHTML = "";
+          return;
+        }
+
+        const prevDisabled = page <= 1 ? "disabled" : "";
+        const nextDisabled = page >= totalPages ? "disabled" : "";
+        const sizeOptions = [10, 20, 50, 100]
+          .map((s) => `<option value="${s}" ${s === pageSize ? "selected" : ""}>${s}</option>`)
+          .join("");
+
+        container.innerHTML = `
+          <div class="pager-controls">
+            <button type="button" class="secondary" ${prevDisabled} onclick="goPage('${kind}', 1)">首页</button>
+            <button type="button" class="secondary" ${prevDisabled} onclick="goPage('${kind}', ${page - 1})">上一页</button>
+            <span>第 ${page} / ${totalPages} 页</span>
+            <button type="button" class="secondary" ${nextDisabled} onclick="goPage('${kind}', ${page + 1})">下一页</button>
+            <button type="button" class="secondary" ${nextDisabled} onclick="goPage('${kind}', ${totalPages})">末页</button>
+          </div>
+          <div class="pager-controls">
+            <span>每页</span>
+            <select onchange="changePageSize('${kind}', Number(this.value))">${sizeOptions}</select>
+            <span>条</span>
+          </div>
+        `;
+      }
+
+      async function refreshAll() {
+        await Promise.all([refreshDashboard(), loadAppsPage(), loadPublishersPage()]);
+      }
+
+      function renderMetrics(counts) {
+        const el = document.getElementById("metrics");
+        const entries = [
+          ["应用监控", counts.apps],
+          ["厂商监控", counts.publishers],
+          ["待发事件", counts.pending_events],
+          ["失败通知", counts.failed_events],
+        ];
+        el.innerHTML = entries
+          .map(
+            ([label, value]) => `
+              <div class="card">
+                <div class="metric">${escapeHtml(value)}</div>
+                <div class="metric-label">${escapeHtml(label)}</div>
+              </div>
+            `
+          )
+          .join("");
+      }
+
+      function renderApps(items) {
+        const el = document.getElementById("apps-table");
+        el.innerHTML = items
+          .map((item) => {
+            const identifier = item.display_name || item.package_name || item.bundle_id || item.app_id || item.id;
+            const status = item.status;
+            const statusText = status
+              ? `${formatList(status.visible_regions)} / 最近检查 ${status.last_checked_at || "-"}`
+              : "尚未执行监控";
+            return `
+              <tr>
+                <td>
+                  <div>${escapeHtml(identifier)}</div>
+                  <div class="muted mono">${escapeHtml(item.package_name || item.bundle_id || item.app_id || "-")}</div>
+                </td>
+                <td>${escapeHtml(item.store)}</td>
+                <td>${escapeHtml(formatList(item.regions))}</td>
+                <td>${escapeHtml(status?.last_version || "-")}</td>
+                <td>${item.notify_on_version_update ? statusPill("enabled") : statusPill("disabled")}</td>
+                <td>${escapeHtml(statusText)}</td>
+                <td>
+                  <div class="inline-actions">
+                    <button type="button" class="secondary" onclick="startEditApp('${item.id}')">编辑</button>
+                    <button type="button" class="danger" onclick="deleteApp('${item.id}')">删除</button>
+                  </div>
+                </td>
+              </tr>
+            `;
+          })
+          .join("");
+      }
+
+      function renderPublishers(items) {
+        const el = document.getElementById("publishers-table");
+        el.innerHTML = items
+          .map(
+            (item) => `
+              <tr>
+                <td>
+                  <div>${escapeHtml(item.publisher_name)}</div>
+                  <div class="muted mono">${escapeHtml(item.publisher_url || item.publisher_ref || "-")}</div>
+                </td>
+                <td>${escapeHtml(item.store)}</td>
+                <td>${escapeHtml(formatList(item.regions))}</td>
+                <td>${item.auto_add_apps ? statusPill("enabled") : statusPill("disabled")}</td>
+                <td>${item.auto_added_notify_on_version_update ? statusPill("enabled") : statusPill("disabled")}</td>
+                <td>
+                  <div class="inline-actions">
+                    <button type="button" class="secondary" onclick="startEditPublisher('${item.id}')">编辑</button>
+                    <button type="button" class="danger" onclick="deletePublisher('${item.id}')">删除</button>
+                  </div>
+                </td>
+              </tr>
+            `
+          )
+          .join("");
+      }
+
+      function renderEvents(items) {
+        const el = document.getElementById("events-table");
+        el.innerHTML = items
+          .map((item) => {
+            const payload = item.payload || {};
+            const app = payload.app || {};
+            const target =
+              payload.display_name ||
+              app.name ||
+              payload.package_name ||
+              payload.bundle_id ||
+              payload.app_id ||
+              payload.publisher_name ||
+              "-";
+            return `
+              <tr>
+                <td>
+                  <div>${escapeHtml(item.event_type)}</div>
+                  <div class="muted">${escapeHtml(item.store)}${item.region ? ` / ${escapeHtml(item.region)}` : ""}</div>
+                </td>
+                <td>${escapeHtml(target)}</td>
+                <td>${statusPill(item.status)}</td>
+                <td>${escapeHtml(item.created_at)}</td>
+              </tr>
+            `;
+          })
+          .join("");
+      }
+
+      function renderJobs(items) {
+        const el = document.getElementById("jobs-table");
+        el.innerHTML = items
+          .map(
+            (item) => `
+              <tr>
+                <td>${escapeHtml(item.job_name)}</td>
+                <td>${statusPill(item.status)}</td>
+                <td>${escapeHtml(item.duration_ms ?? "-")} ms</td>
+                <td class="mono">${escapeHtml(JSON.stringify(item.detail_json || {}))}</td>
+              </tr>
+            `
+          )
+          .join("");
+      }
+
+      function regionsFromInput(value) {
+        return value
+          .split(",")
+          .map((item) => item.trim().toUpperCase())
+          .filter(Boolean);
+      }
+
+      function fillGooglePlaySample() {
+        if (!state.samples) return;
+        resetAppForm();
+        const appForm = document.getElementById("app-form");
+        appForm.store.value = state.samples.google_play.store;
+        appForm.display_name.value = state.samples.google_play.display_name;
+        appForm.package_name.value = state.samples.google_play.package_name;
+        appForm.bundle_id.value = "";
+        appForm.app_id.value = "";
+        appForm.regions.value = state.samples.google_play.regions.join(",");
+        appForm.notify_on_version_update.value = String(state.samples.google_play.notify_on_version_update);
+        showStatus("已填入 Google Play 默认样例。");
+      }
+
+      function fillAppStoreSample() {
+        if (!state.samples) return;
+        resetAppForm();
+        const appForm = document.getElementById("app-form");
+        appForm.store.value = state.samples.app_store.store;
+        appForm.display_name.value = state.samples.app_store.display_name;
+        appForm.package_name.value = "";
+        appForm.bundle_id.value = state.samples.app_store.bundle_id;
+        appForm.app_id.value = state.samples.app_store.app_id;
+        appForm.regions.value = state.samples.app_store.regions.join(",");
+        appForm.notify_on_version_update.value = String(state.samples.app_store.notify_on_version_update);
+        showStatus("已填入 App Store 默认样例。");
+      }
+
+      function fillPublisherSample() {
+        if (!state.samples) return;
+        resetPublisherForm();
+        const publisherForm = document.getElementById("publisher-form");
+        publisherForm.store.value = state.samples.publisher.store;
+        publisherForm.publisher_name.value = state.samples.publisher.publisher_name;
+        publisherForm.publisher_ref.value = "";
+        publisherForm.publisher_url.value = "";
+        publisherForm.regions.value = state.samples.publisher.regions.join(",");
+        publisherForm.auto_add_apps.value = String(state.samples.publisher.auto_add_apps);
+        publisherForm.auto_added_notify_on_version_update.value = String(
+          state.samples.publisher.auto_added_notify_on_version_update
+        );
+        showStatus("已填入厂商默认样例。");
+      }
+
+      function startEditApp(appId) {
+        const item = state.apps.find((entry) => entry.id === appId);
+        if (!item) return;
+        const form = document.getElementById("app-form");
+        state.editingAppId = appId;
+        form.store.value = item.store;
+        form.display_name.value = item.display_name || "";
+        form.package_name.value = item.package_name || "";
+        form.bundle_id.value = item.bundle_id || "";
+        form.app_id.value = item.app_id || "";
+        form.regions.value = (item.regions || []).join(",");
+        form.notify_on_version_update.value = String(item.notify_on_version_update);
+        form.monitoring_enabled.value = String(item.monitoring_enabled);
+        form.check_interval_minutes.value = String(item.check_interval_minutes || 30);
+        setAppFormMode();
+        showStatus("应用已进入编辑模式，保存时将调用更新接口。");
+      }
+
+      function startEditPublisher(publisherId) {
+        const item = state.publishers.find((entry) => entry.id === publisherId);
+        if (!item) return;
+        const form = document.getElementById("publisher-form");
+        state.editingPublisherId = publisherId;
+        form.store.value = item.store;
+        form.publisher_name.value = item.publisher_name || "";
+        form.publisher_ref.value = item.publisher_ref || "";
+        form.publisher_url.value = item.publisher_url || "";
+        form.regions.value = (item.regions || []).join(",");
+        form.monitoring_enabled.value = String(item.monitoring_enabled);
+        form.auto_add_apps.value = String(item.auto_add_apps);
+        form.auto_added_notify_on_version_update.value = String(item.auto_added_notify_on_version_update);
+        setPublisherFormMode();
+        showStatus("厂商已进入编辑模式，保存时将调用更新接口。");
+      }
+
+      async function deleteApp(appId) {
+        if (!window.confirm("确认删除这个应用监控对象吗？历史事件会保留，但对象本身会被移除。")) {
+          return;
+        }
+        await request(`/watch/apps/${appId}`, { method: "DELETE" });
+        if (state.editingAppId === appId) {
+          resetAppForm();
+        }
+        if (state.apps.length <= 1 && state.appsPage > 1) {
+          state.appsPage = state.appsPage - 1;
+        }
+        await Promise.all([refreshDashboard(), loadAppsPage()]);
+        showStatus("应用监控已删除。");
+      }
+
+      async function deletePublisher(publisherId) {
+        if (!window.confirm("确认删除这个厂商监控对象吗？历史事件会保留，但对象本身会被移除。")) {
+          return;
+        }
+        await request(`/watch/publishers/${publisherId}`, { method: "DELETE" });
+        if (state.editingPublisherId === publisherId) {
+          resetPublisherForm();
+        }
+        if (state.publishers.length <= 1 && state.publishersPage > 1) {
+          state.publishersPage = state.publishersPage - 1;
+        }
+        await Promise.all([refreshDashboard(), loadPublishersPage()]);
+        showStatus("厂商监控已删除。");
+      }
+
+      async function submitAppForm(event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        if (state.editingAppId) {
+          const payload = {
+            display_name: form.display_name.value || null,
+            regions: regionsFromInput(form.regions.value),
+            monitoring_enabled: form.monitoring_enabled.value === "true",
+            notify_on_version_update: form.notify_on_version_update.value === "true",
+            check_interval_minutes: Number(form.check_interval_minutes.value || 30),
+          };
+          await request(`/watch/apps/${state.editingAppId}`, {
+            method: "PATCH",
+            body: JSON.stringify(payload),
+          });
+          await Promise.all([refreshDashboard(), loadAppsPage()]);
+          resetAppForm();
+          showStatus("应用监控已更新。");
+          return;
+        }
+
+        const payload = {
+          store: form.store.value,
+          display_name: form.display_name.value || null,
+          package_name: form.package_name.value || null,
+          bundle_id: form.bundle_id.value || null,
+          app_id: form.app_id.value || null,
+          regions: regionsFromInput(form.regions.value),
+          notify_on_version_update: form.notify_on_version_update.value === "true",
+          check_interval_minutes: Number(form.check_interval_minutes.value || 30),
+        };
+        await request("/watch/apps", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        state.appsPage = 1;
+        await Promise.all([refreshDashboard(), loadAppsPage()]);
+        resetAppForm();
+        showStatus("应用监控已新增。");
+      }
+
+      async function submitPublisherForm(event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        if (state.editingPublisherId) {
+          const payload = {
+            publisher_name: form.publisher_name.value,
+            publisher_ref: form.publisher_ref.value || null,
+            publisher_url: form.publisher_url.value || null,
+            regions: regionsFromInput(form.regions.value),
+            monitoring_enabled: form.monitoring_enabled.value === "true",
+            auto_add_apps: form.auto_add_apps.value === "true",
+            auto_added_notify_on_version_update:
+              form.auto_added_notify_on_version_update.value === "true",
+          };
+          await request(`/watch/publishers/${state.editingPublisherId}`, {
+            method: "PATCH",
+            body: JSON.stringify(payload),
+          });
+          await Promise.all([refreshDashboard(), loadPublishersPage()]);
+          resetPublisherForm();
+          showStatus("厂商监控已更新。");
+          return;
+        }
+
+        const payload = {
+          store: form.store.value,
+          publisher_name: form.publisher_name.value,
+          publisher_ref: form.publisher_ref.value || null,
+          publisher_url: form.publisher_url.value || null,
+          regions: regionsFromInput(form.regions.value),
+          auto_add_apps: form.auto_add_apps.value === "true",
+          auto_added_notify_on_version_update:
+            form.auto_added_notify_on_version_update.value === "true",
+        };
+        await request("/watch/publishers", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        state.publishersPage = 1;
+        await Promise.all([refreshDashboard(), loadPublishersPage()]);
+        resetPublisherForm();
+        showStatus("厂商监控已新增。");
+      }
+
+      async function runJob(jobName) {
+        const result = await request("/jobs/run", {
+          method: "POST",
+          body: JSON.stringify({ job_name: jobName }),
+        });
+        await refreshAll();
+        showStatus(`任务 ${jobName} 已执行：${JSON.stringify(result.detail || {})}`);
+      }
+
+      function goPage(kind, page) {
+        if (kind === "apps") {
+          loadAppsPage(page).catch((error) => showStatus(error.message, true));
+        } else {
+          loadPublishersPage(page).catch((error) => showStatus(error.message, true));
+        }
+      }
+
+      function changePageSize(kind, size) {
+        if (kind === "apps") {
+          state.appsPageSize = size;
+          state.appsPage = 1;
+          loadAppsPage().catch((error) => showStatus(error.message, true));
+        } else {
+          state.publishersPageSize = size;
+          state.publishersPage = 1;
+          loadPublishersPage().catch((error) => showStatus(error.message, true));
+        }
+      }
+
+      window.startEditApp = startEditApp;
+      window.startEditPublisher = startEditPublisher;
+      window.deleteApp = (appId) => deleteApp(appId).catch((error) => showStatus(error.message, true));
+      window.deletePublisher = (publisherId) =>
+        deletePublisher(publisherId).catch((error) => showStatus(error.message, true));
+      window.goPage = goPage;
+      window.changePageSize = changePageSize;
+
+      document.getElementById("refresh-all").addEventListener("click", () =>
+        refreshAll().catch((error) => showStatus(error.message, true))
+      );
+      document.getElementById("seed-gp").addEventListener("click", fillGooglePlaySample);
+      document.getElementById("seed-ios").addEventListener("click", fillAppStoreSample);
+      document.getElementById("seed-publisher").addEventListener("click", fillPublisherSample);
+      document.getElementById("app-cancel-btn").addEventListener("click", () => {
+        resetAppForm();
+        showStatus("已取消应用编辑模式。");
+      });
+      document.getElementById("publisher-cancel-btn").addEventListener("click", () => {
+        resetPublisherForm();
+        showStatus("已取消厂商编辑模式。");
+      });
+      document.getElementById("app-form").addEventListener("submit", (event) =>
+        submitAppForm(event).catch((error) => showStatus(error.message, true))
+      );
+      document.getElementById("publisher-form").addEventListener("submit", (event) =>
+        submitPublisherForm(event).catch((error) => showStatus(error.message, true))
+      );
+      document.querySelectorAll("[data-job]").forEach((button) => {
+        button.addEventListener("click", () =>
+          runJob(button.dataset.job).catch((error) => showStatus(error.message, true))
+        );
+      });
+
+      resetAppForm();
+      resetPublisherForm();
+      refreshAll().catch((error) => showStatus(error.message, true));
+    </script>
+  </body>
+</html>

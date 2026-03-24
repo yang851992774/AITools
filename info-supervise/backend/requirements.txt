@@ -1,0 +1,13 @@
+alembic
+apscheduler
+asyncpg
+beautifulsoup4
+fastapi
+httpx
+jinja2
+playwright
+pydantic-settings
+python-dateutil
+redis
+sqlalchemy
+uvicorn[standard]
