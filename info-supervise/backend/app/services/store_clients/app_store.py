@@ -49,6 +49,16 @@ class AppStoreClient:
             )
 
         icon_url = record.get("artworkUrl512") or record.get("artworkUrl100")
+        rating = record.get("averageUserRating")
+        if rating is not None:
+            rating = round(float(rating), 2)
+        rating_count = record.get("userRatingCount")
+        price_raw = record.get("formattedPrice") or str(record.get("price", ""))
+        release_notes = record.get("releaseNotes")
+        file_size_bytes = record.get("fileSizeBytes")
+        file_size = f"{int(file_size_bytes) / (1024 * 1024):.1f} MB" if file_size_bytes else None
+        last_updated = record.get("currentVersionReleaseDate")
+        content_advisory = record.get("contentAdvisoryRating")
 
         return StoreFetchResult(
             store=StoreEnum.APP_STORE,
@@ -60,6 +70,13 @@ class AppStoreClient:
             category=record.get("primaryGenreName"),
             url=record.get("trackViewUrl") or self._build_app_url(region=region, bundle_id=bundle_id, app_id=app_id),
             icon_url=icon_url,
+            rating=rating,
+            rating_count=int(rating_count) if rating_count else None,
+            price=price_raw or None,
+            release_notes=release_notes,
+            file_size=file_size,
+            last_updated=last_updated,
+            content_rating=content_advisory,
             metadata={
                 "track_id": record.get("trackId"),
                 "bundle_id": record.get("bundleId"),

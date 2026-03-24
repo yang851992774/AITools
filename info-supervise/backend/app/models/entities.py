@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -27,6 +27,7 @@ class WatchedApp(Base):
     auto_added: Mapped[bool] = mapped_column(Boolean, default=False)
     notify_on_version_update: Mapped[bool] = mapped_column(Boolean, default=True)
     check_interval_minutes: Mapped[int] = mapped_column(Integer, default=30)
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -101,6 +102,13 @@ class AppStatusCurrent(Base):
     last_category: Mapped[str | None] = mapped_column(String(128), nullable=True)
     last_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     last_icon_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    last_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_rating_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_price: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_release_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_file_size: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_content_rating: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_store_updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

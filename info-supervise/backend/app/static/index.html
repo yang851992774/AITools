@@ -312,6 +312,11 @@
         color: #fecaca;
       }
 
+      .tag-list .pill {
+        font-size: 11px;
+        padding: 2px 6px;
+      }
+
       .section-title {
         display: flex;
         justify-content: space-between;
@@ -420,6 +425,10 @@
                 <option value="false">关闭</option>
               </select>
             </label>
+            <label>
+              标签
+              <input name="tags" placeholder="竞品,重点关注（逗号分隔）" />
+            </label>
             <div id="app-readonly-note" class="readonly-note" style="display: none">
               编辑模式下不支持直接修改商店与应用主标识，如需变更请删除后重新创建。
             </div>
@@ -511,13 +520,24 @@
           <button data-job="monitor_apps">执行应用监控</button>
           <button data-job="discover_publishers">执行厂商发现</button>
           <button data-job="deliver_notifications">执行通知发送</button>
+          <button data-job="generate_digest">生成日报</button>
         </div>
       </div>
 
       <section class="card" style="margin-top: 16px">
-        <div class="section-title">
-          <h2>应用列表</h2>
-          <span class="muted" id="apps-pager-info">共 0 条</span>
+        <div class="section-title" style="flex-wrap:wrap;gap:8px">
+          <h2 style="margin:0">应用列表</h2>
+          <input id="apps-search" placeholder="搜索应用名/包名" onkeydown="if(event.key==='Enter')searchApps()" style="width:180px;padding:4px 8px;border-radius:4px;border:1px solid var(--border);background:#0b1220;color:var(--text);font-size:13px;" />
+          <select id="apps-store-filter" onchange="filterAppsByStore(this.value)" style="padding:4px 8px;border-radius:4px;border:1px solid var(--border);">
+            <option value="">全部商店</option>
+            <option value="google_play">Google Play</option>
+            <option value="app_store">App Store</option>
+          </select>
+          <select id="apps-tag-filter" onchange="filterAppsByTag(this.value)" style="padding:4px 8px;border-radius:4px;border:1px solid var(--border);">
+            <option value="">全部标签</option>
+          </select>
+          <button class="secondary" onclick="exportAppsCSV()" style="padding:4px 10px;font-size:12px">导出 CSV</button>
+          <span class="muted" id="apps-pager-info" style="margin-left:auto">共 0 条</span>
         </div>
         <div style="overflow:auto">
           <table>
@@ -525,9 +545,10 @@
               <tr>
                 <th>应用</th>
                 <th>商店</th>
-                <th>区域</th>
+                <th>评分</th>
                 <th>当前版本</th>
-                <th>版本更新通知</th>
+                <th>标签</th>
+                <th>区域</th>
                 <th>最新状态</th>
                 <th>操作</th>
               </tr>
@@ -563,9 +584,27 @@
 
       <div class="grid cols-2" style="margin-top: 16px">
         <section class="card">
-          <div class="section-title">
-            <h2>最近事件</h2>
-            <span class="muted">支持飞书通知状态确认</span>
+          <div class="section-title" style="flex-wrap:wrap;gap:8px">
+            <h2 style="margin:0">最近事件</h2>
+            <select id="events-type-filter" onchange="loadEventsPage(1)" style="padding:4px 8px;border-radius:4px;border:1px solid var(--border);font-size:12px">
+              <option value="">全部类型</option>
+              <option value="app_visible_first_seen">首次上架</option>
+              <option value="app_removed_from_store">下架</option>
+              <option value="app_version_updated">版本更新</option>
+              <option value="app_rating_changed">评分变动</option>
+              <option value="app_release_notes_changed">更新日志</option>
+              <option value="publisher_new_game_detected">新游上架</option>
+              <option value="metadata_changed_significantly">元数据变更</option>
+              <option value="monitor_failed_repeatedly">监控失败</option>
+            </select>
+            <select id="events-status-filter" onchange="loadEventsPage(1)" style="padding:4px 8px;border-radius:4px;border:1px solid var(--border);font-size:12px">
+              <option value="">全部状态</option>
+              <option value="pending">待发送</option>
+              <option value="sent">已发送</option>
+              <option value="failed">失败</option>
+              <option value="suppressed">已抑制</option>
+            </select>
+            <span class="muted" id="events-pager-info" style="margin-left:auto">共 0 条</span>
           </div>
           <div style="overflow:auto">
             <table>
@@ -580,6 +619,7 @@
               <tbody id="events-table"></tbody>
             </table>
           </div>
+          <div class="pager" id="events-pager"></div>
         </section>
 
         <section class="card">
@@ -604,6 +644,15 @@
       </div>
     </div>
 
+    <div id="history-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:100;overflow:auto;padding:40px">
+      <div style="max-width:800px;margin:0 auto;background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px;position:relative">
+        <button onclick="closeHistoryModal()" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer">&times;</button>
+        <h3 id="history-modal-title">历史趋势</h3>
+        <canvas id="history-chart" height="200"></canvas>
+        <div id="history-snapshots" style="margin-top:16px;max-height:300px;overflow:auto;font-size:12px"></div>
+      </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
     <script>
       const state = {
         samples: null,
@@ -619,6 +668,13 @@
         publishersPageSize: 20,
         publishersTotalPages: 1,
         publishersTotal: 0,
+        appsStoreFilter: "",
+        appsSearchQ: "",
+        appsTagFilter: "",
+        eventsPage: 1,
+        eventsPageSize: 20,
+        eventsTotalPages: 1,
+        eventsTotal: 0,
       };
 
       function showStatus(message, isError = false) {
@@ -722,6 +778,7 @@
         form.notify_on_version_update.value = "true";
         form.monitoring_enabled.value = "true";
         form.check_interval_minutes.value = "30";
+        form.tags.value = "";
         state.editingAppId = null;
         setAppFormMode();
       }
@@ -742,13 +799,48 @@
         const data = await request("/dashboard/summary");
         state.samples = data.samples;
         renderMetrics(data.counts);
-        renderEvents(data.events);
         renderJobs(data.job_runs);
+      }
+
+      async function loadEventsPage(page) {
+        if (page !== undefined) state.eventsPage = page;
+        const typeFilter = document.getElementById("events-type-filter")?.value || "";
+        const statusFilter = document.getElementById("events-status-filter")?.value || "";
+        let url = `/events/paged?page=${state.eventsPage}&page_size=${state.eventsPageSize}`;
+        if (typeFilter) url += `&event_type=${encodeURIComponent(typeFilter)}`;
+        if (statusFilter) url += `&status=${encodeURIComponent(statusFilter)}`;
+        const data = await request(url);
+        state.eventsTotal = data.total;
+        state.eventsTotalPages = data.total_pages;
+        state.eventsPage = data.page;
+        renderEvents(data.items);
+
+        const infoEl = document.getElementById("events-pager-info");
+        if (infoEl) infoEl.textContent = `共 ${data.total} 条`;
+
+        const pagerEl = document.getElementById("events-pager");
+        if (pagerEl && data.total_pages > 1) {
+          const p = data.page;
+          const tp = data.total_pages;
+          pagerEl.innerHTML = `
+            <div class="pager-controls">
+              <button type="button" class="secondary" ${p <= 1 ? "disabled" : ""} onclick="loadEventsPage(${p - 1})">上一页</button>
+              <span>第 ${p} / ${tp} 页</span>
+              <button type="button" class="secondary" ${p >= tp ? "disabled" : ""} onclick="loadEventsPage(${p + 1})">下一页</button>
+            </div>
+          `;
+        } else if (pagerEl) {
+          pagerEl.innerHTML = "";
+        }
       }
 
       async function loadAppsPage(page) {
         if (page !== undefined) state.appsPage = page;
-        const data = await request(`/watch/apps?page=${state.appsPage}&page_size=${state.appsPageSize}`);
+        let url = `/watch/apps?page=${state.appsPage}&page_size=${state.appsPageSize}`;
+        if (state.appsStoreFilter) url += `&store=${encodeURIComponent(state.appsStoreFilter)}`;
+        if (state.appsSearchQ) url += `&q=${encodeURIComponent(state.appsSearchQ)}`;
+        if (state.appsTagFilter) url += `&tag=${encodeURIComponent(state.appsTagFilter)}`;
+        const data = await request(url);
         state.apps = data.items;
         state.appsTotal = data.total;
         state.appsTotalPages = data.total_pages;
@@ -805,7 +897,7 @@
       }
 
       async function refreshAll() {
-        await Promise.all([refreshDashboard(), loadAppsPage(), loadPublishersPage()]);
+        await Promise.all([refreshDashboard(), loadAppsPage(), loadPublishersPage(), loadEventsPage()]);
       }
 
       function renderMetrics(counts) {
@@ -839,11 +931,23 @@
 
       function renderApps(items) {
         const el = document.getElementById("apps-table");
+        const allTags = new Set();
+        items.forEach((i) => (i.tags || []).forEach((t) => allTags.add(t)));
+        const tagSelect = document.getElementById("apps-tag-filter");
+        if (tagSelect) {
+          const curVal = tagSelect.value;
+          tagSelect.innerHTML = '<option value="">全部标签</option>' +
+            [...allTags].sort().map((t) => `<option value="${escapeHtml(t)}" ${t === curVal ? "selected" : ""}>${escapeHtml(t)}</option>`).join("");
+        }
+
         el.innerHTML = items
           .map((item) => {
             const identifier = item.display_name || item.package_name || item.bundle_id || item.app_id || item.id;
             const subId = item.package_name || item.bundle_id || item.app_id || "";
             const status = item.status;
+            const ratingStr = status?.last_rating != null ? `${status.last_rating.toFixed(1)}` : "-";
+            const ratingCountStr = status?.last_rating_count != null ? `(${status.last_rating_count.toLocaleString()})` : "";
+            const tagsHtml = (item.tags || []).map((t) => `<span class="pill">${escapeHtml(t)}</span>`).join(" ");
             const statusText = status
               ? `${formatList(status.visible_regions)} / ${status.last_checked_at || "-"}`
               : "尚未监控";
@@ -853,18 +957,20 @@
                   <div class="app-name-cell">
                     ${appIconHtml(item)}
                     <div>
-                      <div>${escapeHtml(identifier)}</div>
+                      <div><a href="#" onclick="openHistoryModal('${item.id}');return false" style="color:var(--accent-2);text-decoration:none">${escapeHtml(identifier)}</a></div>
                       <div class="muted mono cell-sub">${escapeHtml(subId)}</div>
                     </div>
                   </div>
                 </td>
                 <td class="nowrap">${escapeHtml(item.store)}</td>
-                <td class="nowrap">${escapeHtml(formatList(item.regions))}</td>
+                <td class="nowrap">${escapeHtml(ratingStr)} <span class="muted">${ratingCountStr}</span></td>
                 <td class="nowrap">${escapeHtml(status?.last_version || "-")}</td>
-                <td class="nowrap">${item.notify_on_version_update ? statusPill("enabled") : statusPill("disabled")}</td>
+                <td class="nowrap">${tagsHtml || "-"}</td>
+                <td class="nowrap">${escapeHtml(formatList(item.regions))}</td>
                 <td>${escapeHtml(statusText)}</td>
                 <td>
                   <div class="inline-actions nowrap">
+                    <button type="button" class="secondary" onclick="openAppStore('${item.id}')">商店</button>
                     <button type="button" class="secondary" onclick="startEditApp('${item.id}')">编辑</button>
                     <button type="button" class="danger" onclick="deleteApp('${item.id}')">删除</button>
                   </div>
@@ -1014,6 +1120,7 @@
         form.notify_on_version_update.value = String(item.notify_on_version_update);
         form.monitoring_enabled.value = String(item.monitoring_enabled);
         form.check_interval_minutes.value = String(item.check_interval_minutes || 30);
+        form.tags.value = (item.tags || []).join(",");
         setAppFormMode();
         showStatus("应用已进入编辑模式，保存时将调用更新接口。");
       }
@@ -1083,6 +1190,7 @@
             monitoring_enabled: form.monitoring_enabled.value === "true",
             notify_on_version_update: form.notify_on_version_update.value === "true",
             check_interval_minutes: Number(form.check_interval_minutes.value || 30),
+            tags: form.tags.value ? form.tags.value.split(",").map((t) => t.trim()).filter(Boolean) : [],
           };
           await request(`/watch/apps/${state.editingAppId}`, {
             method: "PATCH",
@@ -1103,6 +1211,7 @@
           regions: regionsFromInput(form.regions.value),
           notify_on_version_update: form.notify_on_version_update.value === "true",
           check_interval_minutes: Number(form.check_interval_minutes.value || 30),
+          tags: form.tags.value ? form.tags.value.split(",").map((t) => t.trim()).filter(Boolean) : [],
         };
         await request("/watch/apps", {
           method: "POST",
@@ -1167,6 +1276,44 @@
         showStatus(`任务 ${jobName} 已执行：${JSON.stringify(result.detail || {})}`);
       }
 
+      function filterAppsByStore(value) {
+        state.appsStoreFilter = value;
+        state.appsPage = 1;
+        loadAppsPage().catch((error) => showStatus(error.message, true));
+      }
+
+      function filterAppsByTag(value) {
+        state.appsTagFilter = value;
+        state.appsPage = 1;
+        loadAppsPage().catch((error) => showStatus(error.message, true));
+      }
+
+      function searchApps() {
+        state.appsSearchQ = document.getElementById("apps-search").value.trim();
+        state.appsPage = 1;
+        loadAppsPage().catch((error) => showStatus(error.message, true));
+      }
+
+      function exportAppsCSV() {
+        let url = "/watch/apps/export?";
+        if (state.appsStoreFilter) url += `store=${encodeURIComponent(state.appsStoreFilter)}&`;
+        if (state.appsSearchQ) url += `q=${encodeURIComponent(state.appsSearchQ)}&`;
+        if (state.appsTagFilter) url += `tag=${encodeURIComponent(state.appsTagFilter)}&`;
+        window.open(url, "_blank");
+      }
+
+      function buildStoreUrl(item) {
+        if (item.status?.last_url) return item.status.last_url;
+        if (item.store === "google_play" && item.package_name) {
+          return `https://play.google.com/store/apps/details?id=${encodeURIComponent(item.package_name)}`;
+        }
+        if (item.store === "app_store") {
+          if (item.app_id) return `https://apps.apple.com/app/id${encodeURIComponent(item.app_id)}`;
+          if (item.bundle_id) return `https://apps.apple.com/app/${encodeURIComponent(item.bundle_id)}`;
+        }
+        return "";
+      }
+
       function goPage(kind, page) {
         if (kind === "apps") {
           loadAppsPage(page).catch((error) => showStatus(error.message, true));
@@ -1187,12 +1334,89 @@
         }
       }
 
+      let historyChartInstance = null;
+
+      async function openHistoryModal(appId) {
+        const item = state.apps.find((a) => a.id === appId);
+        const name = item?.display_name || item?.package_name || appId;
+        document.getElementById("history-modal-title").textContent = `历史趋势 - ${name}`;
+        document.getElementById("history-modal").style.display = "block";
+        document.getElementById("history-snapshots").innerHTML = "加载中...";
+
+        try {
+          const data = await request(`/watch/apps/${appId}/history?days=30`);
+          if (historyChartInstance) historyChartInstance.destroy();
+
+          const labels = data.map((s) => s.observed_at.split("T")[0]);
+          const versions = data.map((s) => s.version || "");
+          const uniqueVersions = [...new Set(versions)];
+          const versionIndices = versions.map((v) => uniqueVersions.indexOf(v));
+
+          const ctx = document.getElementById("history-chart").getContext("2d");
+          historyChartInstance = new Chart(ctx, {
+            type: "line",
+            data: {
+              labels,
+              datasets: [{
+                label: "版本 (index)",
+                data: versionIndices,
+                borderColor: "#22c55e",
+                tension: 0.3,
+                pointRadius: 2,
+              }],
+            },
+            options: {
+              responsive: true,
+              scales: {
+                y: {
+                  ticks: {
+                    callback: (v) => uniqueVersions[v] || v,
+                    color: "#94a3b8",
+                  },
+                  grid: { color: "#1f2937" },
+                },
+                x: {
+                  ticks: { color: "#94a3b8", maxTicksLimit: 15 },
+                  grid: { color: "#1f2937" },
+                },
+              },
+              plugins: { legend: { labels: { color: "#e5e7eb" } } },
+            },
+          });
+
+          document.getElementById("history-snapshots").innerHTML = data.length
+            ? `<table><thead><tr><th>时间</th><th>区域</th><th>版本</th><th>可见</th></tr></thead><tbody>${data.map((s) => `<tr><td>${escapeHtml(s.observed_at)}</td><td>${escapeHtml(s.region)}</td><td>${escapeHtml(s.version || "-")}</td><td>${s.is_visible ? "是" : "否"}</td></tr>`).join("")}</tbody></table>`
+            : "<p class='muted'>暂无快照数据</p>";
+        } catch (e) {
+          document.getElementById("history-snapshots").innerHTML = `<p class='muted'>加载失败: ${escapeHtml(e.message)}</p>`;
+        }
+      }
+
+      function closeHistoryModal() {
+        document.getElementById("history-modal").style.display = "none";
+        if (historyChartInstance) { historyChartInstance.destroy(); historyChartInstance = null; }
+      }
+
+      window.openHistoryModal = openHistoryModal;
+      window.closeHistoryModal = closeHistoryModal;
       window.startEditApp = startEditApp;
       window.startEditPublisher = startEditPublisher;
       window.deleteApp = deleteApp;
       window.deletePublisher = deletePublisher;
       window.goPage = goPage;
       window.changePageSize = changePageSize;
+      window.filterAppsByStore = filterAppsByStore;
+      window.filterAppsByTag = filterAppsByTag;
+      window.searchApps = searchApps;
+      window.exportAppsCSV = exportAppsCSV;
+      window.loadEventsPage = loadEventsPage;
+      window.openAppStore = function (appId) {
+        const item = state.apps.find((a) => a.id === appId);
+        if (!item) return;
+        const url = buildStoreUrl(item);
+        if (url) window.open(url, "_blank", "noopener,noreferrer");
+        else showStatus("无法构建商店链接", true);
+      };
 
       document.getElementById("refresh-all").addEventListener("click", () =>
         refreshAll().catch((error) => showStatus(error.message, true))

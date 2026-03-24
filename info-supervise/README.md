@@ -8,6 +8,16 @@
 - 按 `bundle_id` 或 `app_id` 监控 App Store 游戏。
 - 监控指定厂商的新游戏发现，并可自动加入应用监控。
 - 支持对应用版本更新进行监控并推送飞书通知。
+- **采集评分、评分人数、价格、更新日志、文件大小、最近更新时间等商店元数据。**
+- **评分变动检测**：当评分变化幅度 ≥ 0.2 时产生 `app_rating_changed` 事件。
+- **更新日志变动检测**：`release_notes` 内容变化时产生 `app_release_notes_changed` 事件。
+- **飞书 Interactive Card 卡片通知**：包含应用信息、事件详情和商店按钮。
+- **应用标签系统**：支持给应用打标签（如"竞品"、"重点关注"）并按标签筛选。
+- **历史趋势图表**：点击应用名可查看版本/快照时间线图表。
+- **每日摘要报告**：可配置定时发送 24h 内事件汇总到飞书。
+- **事件筛选增强**：事件列表支持按类型、状态筛选，并支持分页。
+- **应用搜索**：支持按名称 / 包名 / Bundle ID 模糊搜索。
+- **CSV 导出**：一键导出应用列表为 CSV 文件。
 - 保存快照、当前状态、事件流水、通知记录和任务执行日志。
 - 支持 `FastAPI + APScheduler + PostgreSQL + Redis + Docker Compose` 部署。
 
@@ -31,16 +41,20 @@ docker compose up --build -d
 
 根路径 `/` 提供一个零构建的简易控制台页面，支持：
 
-- 录入 Google Play / App Store 应用监控
+- 录入 Google Play / App Store 应用监控（含标签输入）
 - 录入厂商监控
 - 列表点击进入编辑模式，并回填到上方表单
 - 删除应用/厂商监控对象
-- 配置“版本更新通知”开关
+- 配置"版本更新通知"开关
 - 配置监控启停、区域、检查间隔等可变字段
-- 在应用列表直接查看当前版本号
-- 手动触发 `monitor_apps` / `discover_publishers` / `deliver_notifications`
-- 查看最近应用、厂商、事件和任务记录
-- 应用列表和厂商列表支持服务端分页（上一页 / 下一页 / 每页条数切换）
+- 应用列表显示评分、评分人数、当前版本、标签
+- 点击应用名称弹出历史趋势图表（Chart.js）
+- 应用列表支持按商店类型 / 标签筛选，支持模糊搜索
+- 应用列表每行支持"商店"按钮，一键跳转到对应商店详情页
+- 一键导出 CSV
+- 手动触发 `monitor_apps` / `discover_publishers` / `deliver_notifications` / `generate_digest`
+- 事件列表支持类型筛选、状态筛选和分页
+- 应用列表和厂商列表支持服务端分页
 - 一键填入默认真实联调样例
 
 ## `.env` 关键配置
@@ -51,21 +65,26 @@ docker compose up --build -d
 - `APP_MONITOR_INTERVAL_MINUTES`: 应用监控轮询周期
 - `PUBLISHER_MONITOR_INTERVAL_HOURS`: 厂商新游发现周期
 - `NOTIFICATION_INTERVAL_MINUTES`: 通知投递周期
+- `DIGEST_ENABLED`: 是否启用每日摘要报告（`true` / `false`）
+- `DIGEST_HOUR`: 摘要报告发送时间（UTC 小时，默认 10）
 
 ## 主要接口
 
 - `POST /watch/apps`
-- `GET /watch/apps?page=1&page_size=20`
+- `GET /watch/apps?page=1&page_size=20&store=google_play&q=clash&tag=竞品`
+- `GET /watch/apps/export?store=google_play&q=clash&tag=竞品`（CSV 导出）
+- `GET /watch/apps/{id}/history?days=30`（历史快照）
 - `PATCH /watch/apps/{id}`
 - `DELETE /watch/apps/{id}`
 - `POST /watch/publishers`
 - `GET /watch/publishers?page=1&page_size=20`
 - `PATCH /watch/publishers/{id}`
 - `DELETE /watch/publishers/{id}`
-- `GET /events`
+- `GET /events`（兼容旧接口）
+- `GET /events/paged?page=1&page_size=20&event_type=app_version_updated&status=sent`
 - `GET /dashboard/summary`
 - `GET /jobs/runs`
-- `POST /jobs/run`
+- `POST /jobs/run`（支持 `generate_digest` 任务）
 
 ## 示例请求
 
@@ -76,7 +95,8 @@ curl -X POST http://localhost:8000/watch/apps \
     "store": "google_play",
     "package_name": "com.supercell.clashofclans",
     "regions": ["US", "JP", "KR"],
-    "notify_on_version_update": true
+    "notify_on_version_update": true,
+    "tags": ["竞品", "重点"]
   }'
 ```
 
@@ -93,48 +113,25 @@ curl -X POST http://localhost:8000/watch/publishers \
 ```
 
 ```bash
-curl -X PATCH http://localhost:8000/watch/apps/<app_id> \
+curl "http://localhost:8000/watch/apps?page=1&page_size=10&store=google_play&q=clash&tag=竞品"
+```
+
+```bash
+curl "http://localhost:8000/watch/apps/export" -o apps.csv
+```
+
+```bash
+curl "http://localhost:8000/watch/apps/<app_id>/history?days=30"
+```
+
+```bash
+curl "http://localhost:8000/events/paged?page=1&page_size=20&event_type=app_version_updated"
+```
+
+```bash
+curl -X POST http://localhost:8000/jobs/run \
   -H "Content-Type: application/json" \
-  -d '{
-    "display_name": "Clash of Clans",
-    "regions": ["US", "JP"],
-    "monitoring_enabled": true,
-    "notify_on_version_update": true,
-    "check_interval_minutes": 30
-  }'
-```
-
-```bash
-curl -X PATCH http://localhost:8000/watch/publishers/<publisher_id> \
-  -H "Content-Type: application/json" \
-  -d '{
-    "publisher_name": "Supercell",
-    "publisher_url": "https://apps.apple.com/developer/supercell/id488106216",
-    "regions": ["US", "JP"],
-    "monitoring_enabled": true,
-    "auto_add_apps": true,
-    "auto_added_notify_on_version_update": true
-  }'
-```
-
-```bash
-curl -X DELETE http://localhost:8000/watch/apps/<app_id>
-```
-
-```bash
-curl "http://localhost:8000/watch/apps?page=1&page_size=10"
-```
-
-```bash
-curl "http://localhost:8000/watch/publishers?page=2&page_size=20"
-```
-
-```bash
-curl "http://localhost:8000/events?status=pending&limit=20"
-```
-
-```bash
-curl http://localhost:8000/dashboard/summary
+  -d '{"job_name": "generate_digest"}'
 ```
 
 ## 默认真实联调样例
@@ -154,19 +151,26 @@ curl http://localhost:8000/dashboard/summary
    - `monitor_apps`
    - `discover_publishers`
    - `deliver_notifications`
-6. 在页面或 `GET /events` 中确认事件状态。
-7. 在飞书群确认消息是否成功送达。
+   - `generate_digest`（可选，生成 24h 汇总日报）
+6. 在页面或 `GET /events/paged` 中确认事件状态。
+7. 在飞书群确认消息是否成功送达（消息格式为卡片）。
 
-如果你希望监控版本更新：
-- 新增应用时把 `notify_on_version_update` 设为 `true`
-- 新增厂商时把 `auto_added_notify_on_version_update` 设为 `true`
-- 当商店返回的版本号与当前已记录版本号不同，系统会生成 `app_version_updated` 事件并投递飞书
+新增监控能力说明：
+- 评分变动：系统会在评分变化 ≥ 0.2 时生成 `app_rating_changed` 事件
+- 更新日志：当 `release_notes` 内容变化时生成 `app_release_notes_changed` 事件
+- 飞书通知现在使用 Interactive Card 格式，包含图标、关键字段和商店跳转按钮
 
 页面编辑/删除说明：
 - 点击应用列表或厂商列表中的 `编辑`，会把当前记录回填到上方表单并切换到编辑模式
 - 编辑模式下提交会调用 `PATCH`，取消编辑后恢复为新增模式
 - 点击 `删除` 会先弹确认框，再调用 `DELETE`
-- 应用主标识 `package_name` / `bundle_id` / `app_id` 默认不支持直接修改；如需变更，建议删除后重新创建
+
+商店筛选、搜索与导出：
+- 应用列表标题旁的下拉框可按 `Google Play` / `App Store` 过滤，切换后自动回到第 1 页
+- 搜索框支持按应用名 / 包名 / Bundle ID 模糊搜索
+- 标签下拉框可按标签筛选
+- "导出 CSV" 按钮导出当前筛选条件下的全部应用
+- 点击应用名称打开历史趋势弹窗，显示版本时间线图表
 
 更详细的联调步骤见 `docs/e2e-testing.md`。
 
@@ -181,7 +185,9 @@ curl http://localhost:8000/dashboard/summary
 
 ## 说明
 
-- “过审核”按商店公开可见性判断。
+- "过审核"按商店公开可见性判断。
 - 下架采用连续不可见确认，减少误报。
 - 版本更新会生成独立的 `app_version_updated` 事件。
-- 通知默认通过飞书群机器人 Webhook 发送。
+- 评分变动会生成 `app_rating_changed` 事件（阈值 0.2）。
+- 更新日志变动会生成 `app_release_notes_changed` 事件。
+- 通知默认通过飞书群机器人 Webhook 发送（Interactive Card 卡片格式）。

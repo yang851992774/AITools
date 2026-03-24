@@ -68,11 +68,44 @@ class GooglePlayClient:
                 version = value.get_text(strip=True)
                 break
 
+        rating_str = self._extract_meta(soup, "rating") or self._extract_itemprop(soup, "ratingValue")
+        rating = None
+        if rating_str:
+            try:
+                rating = round(float(rating_str), 2)
+            except ValueError:
+                pass
+
+        rating_count_str = self._extract_itemprop(soup, "ratingCount")
+        rating_count = None
+        if rating_count_str:
+            try:
+                rating_count = int(rating_count_str.replace(",", ""))
+            except ValueError:
+                pass
+
+        price_str = self._extract_itemprop(soup, "price") or self._extract_meta(soup, "og:price:amount")
+        installs = self._extract_detail_value(soup, "Installs")
+        content_rating = self._extract_detail_value(soup, "Content rating")
+        file_size = self._extract_detail_value(soup, "Size")
+        last_updated = self._extract_detail_value(soup, "Updated")
+
+        whats_new = None
+        wn_section = soup.select_one("[data-g-id='whatsnew']") or soup.select_one("div.W4P4ne")
+        if wn_section:
+            wn_content = wn_section.select_one("div.DWPxHb, content > div")
+            if wn_content:
+                whats_new = wn_content.get_text(separator="\n", strip=True)
+            elif wn_section.get_text(strip=True):
+                whats_new = wn_section.get_text(separator="\n", strip=True)
+
         metadata = {
-            "installs": self._extract_detail_value(soup, "Installs"),
-            "content_rating": self._extract_detail_value(soup, "Content rating"),
+            "installs": installs,
+            "content_rating": content_rating,
             "developer_url": developer_anchor.get("href") if developer_anchor else None,
             "image": self._extract_meta(soup, "og:image"),
+            "file_size": file_size,
+            "last_updated": last_updated,
         }
 
         return StoreFetchResult(
@@ -85,6 +118,13 @@ class GooglePlayClient:
             category=category,
             url=url,
             icon_url=metadata.get("image"),
+            rating=rating,
+            rating_count=rating_count,
+            price=price_str,
+            release_notes=whats_new,
+            file_size=file_size,
+            last_updated=last_updated,
+            content_rating=content_rating,
             metadata=metadata,
             raw_payload={"html_length": len(response.text)},
             observed_at=observed_at,
@@ -143,6 +183,12 @@ class GooglePlayClient:
     def _build_publisher_url(self, *, region: str, publisher_name: str) -> str:
         query = quote_plus(f"pub:{publisher_name}")
         return f"https://play.google.com/store/search?q={query}&c=apps&hl=en&gl={region.upper()}"
+
+    def _extract_itemprop(self, soup: BeautifulSoup, itemprop_name: str) -> str | None:
+        tag = soup.find(attrs={"itemprop": itemprop_name})
+        if tag:
+            return (tag.get("content") or tag.get_text(strip=True)) or None
+        return None
 
     def _extract_meta(self, soup: BeautifulSoup, property_name: str) -> str | None:
         tag = soup.find("meta", attrs={"property": property_name})

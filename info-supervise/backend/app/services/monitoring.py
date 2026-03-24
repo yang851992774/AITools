@@ -96,6 +96,7 @@ class MonitoringService:
             auto_added=False,
             notify_on_version_update=payload.notify_on_version_update,
             check_interval_minutes=payload.check_interval_minutes,
+            tags=payload.tags,
         )
         self.session.add(watched_app)
         await self.session.commit()
@@ -107,18 +108,42 @@ class MonitoringService:
         return list(result.all())
 
     async def list_watched_apps_paged(
-        self, *, page: int = 1, page_size: int = 20
+        self, *, page: int = 1, page_size: int = 20, store: str | None = None,
+        q: str | None = None, tag: str | None = None,
     ) -> PaginatedResponse[WatchedAppWithStatus]:
         import math
+        from sqlalchemy import or_
 
-        total = await self.session.scalar(select(func.count()).select_from(WatchedApp)) or 0
+        base_filter = []
+        if store and store in {e.value for e in StoreEnum}:
+            base_filter.append(WatchedApp.store == store)
+        if q:
+            pattern = f"%{q}%"
+            base_filter.append(
+                or_(
+                    WatchedApp.display_name.ilike(pattern),
+                    WatchedApp.package_name.ilike(pattern),
+                    WatchedApp.bundle_id.ilike(pattern),
+                    WatchedApp.app_id.ilike(pattern),
+                )
+            )
+        if tag:
+            base_filter.append(WatchedApp.tags.contains([tag]))
+
+        count_q = select(func.count()).select_from(WatchedApp)
+        list_q = select(WatchedApp).order_by(desc(WatchedApp.created_at))
+        for cond in base_filter:
+            count_q = count_q.where(cond)
+            list_q = list_q.where(cond)
+
+        total = await self.session.scalar(count_q) or 0
         total_pages = max(1, math.ceil(total / page_size))
         offset = (page - 1) * page_size
 
         apps = list(
             (
                 await self.session.scalars(
-                    select(WatchedApp).order_by(desc(WatchedApp.created_at)).offset(offset).limit(page_size)
+                    list_q.offset(offset).limit(page_size)
                 )
             ).all()
         )
@@ -379,6 +404,8 @@ class MonitoringService:
             detail = await self.run_publisher_discovery()
         elif job_name == JobNameEnum.DELIVER_NOTIFICATIONS:
             detail = await self.dispatch_pending_events()
+        elif job_name == JobNameEnum.GENERATE_DIGEST:
+            detail = await self.generate_digest()
         else:
             raise ValueError(f"Unsupported job: {job_name}")
         return JobRunResponse(job_name=job_name.value, status="completed", detail=detail)
@@ -448,7 +475,7 @@ class MonitoringService:
                     await self.session.commit()
                     continue
 
-                message = self._format_event_text(event)
+                card = self._format_event_card(event)
                 try:
                     for channel in active_channels:
                         if channel.channel_type != "feishu":
@@ -458,7 +485,7 @@ class MonitoringService:
                             secret=channel.secret,
                             timeout=self.settings.request_timeout_seconds,
                         )
-                        await notifier.send_text(message)
+                        await notifier.send_card(card)
                     event.status = "sent"
                     event.sent_at = datetime.now(timezone.utc)
                     event.last_error = None
@@ -472,6 +499,119 @@ class MonitoringService:
             return {"pending": sent + suppressed, "sent": sent, "suppressed": suppressed}
 
         return await self._run_job_with_audit(JobNameEnum.DELIVER_NOTIFICATIONS.value, _job)
+
+    async def generate_digest(self) -> dict:
+        async def _job() -> dict:
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+            events_q = await self.session.scalars(
+                select(Event).where(Event.created_at >= cutoff).order_by(Event.created_at.asc())
+            )
+            all_events = list(events_q.all())
+            if not all_events:
+                return {"events": 0, "sent": False}
+
+            type_counts: dict[str, int] = {}
+            for ev in all_events:
+                label = self._EVENT_TYPE_LABELS.get(ev.event_type, ev.event_type)
+                type_counts[label] = type_counts.get(label, 0) + 1
+
+            lines = [f"- {label}: **{count}** 条" for label, count in type_counts.items()]
+            summary_text = "\n".join(lines)
+
+            card = {
+                "header": {
+                    "title": {"tag": "plain_text", "content": f"监控日报 | 过去 24h 共 {len(all_events)} 条事件"},
+                    "template": "indigo",
+                },
+                "elements": [
+                    {"tag": "div", "text": {"tag": "lark_md", "content": summary_text}},
+                ],
+            }
+
+            channels = await self.session.scalars(
+                select(NotificationChannel).where(NotificationChannel.enabled.is_(True))
+            )
+            sent = False
+            for channel in channels.all():
+                if channel.channel_type != "feishu":
+                    continue
+                notifier = FeishuNotifier(
+                    webhook_url=channel.webhook_url,
+                    secret=channel.secret,
+                    timeout=self.settings.request_timeout_seconds,
+                )
+                await notifier.send_card(card)
+                sent = True
+
+            return {"events": len(all_events), "sent": sent}
+
+        return await self._run_job_with_audit(JobNameEnum.GENERATE_DIGEST.value, _job)
+
+    async def list_events_paged(
+        self,
+        *,
+        page: int = 1,
+        page_size: int = 20,
+        status: str | None = None,
+        event_type: str | None = None,
+        store: str | None = None,
+        q: str | None = None,
+    ) -> PaginatedResponse:
+        import math
+        from sqlalchemy import or_
+
+        base_q = select(Event)
+        count_q = select(func.count()).select_from(Event)
+
+        filters = []
+        if status:
+            filters.append(Event.status == status)
+        if event_type:
+            filters.append(Event.event_type == event_type)
+        if store:
+            filters.append(Event.store == store)
+        if q:
+            pattern = f"%{q}%"
+            filters.append(
+                or_(
+                    Event.event_type.ilike(pattern),
+                    Event.store.ilike(pattern),
+                )
+            )
+
+        for f in filters:
+            base_q = base_q.where(f)
+            count_q = count_q.where(f)
+
+        total = await self.session.scalar(count_q) or 0
+        total_pages = max(1, math.ceil(total / page_size))
+        offset = (page - 1) * page_size
+
+        events_result = await self.session.scalars(
+            base_q.order_by(desc(Event.created_at)).offset(offset).limit(page_size)
+        )
+        items = [
+            {
+                "id": ev.id,
+                "event_type": ev.event_type,
+                "store": ev.store,
+                "status": ev.status,
+                "region": ev.region,
+                "payload": ev.payload,
+                "created_at": ev.created_at.isoformat(),
+                "sent_at": ev.sent_at.isoformat() if ev.sent_at else None,
+                "last_error": ev.last_error,
+            }
+            for ev in events_result.all()
+        ]
+
+        return PaginatedResponse(
+            items=items,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+        )
 
     async def _fetch_app_result(self, watched_app: WatchedApp, region: str) -> StoreFetchResult:
         try:
@@ -574,6 +714,95 @@ class MonitoringService:
             lines.append(f"可见区域: {', '.join(payload['visible_regions'])}")
         return "\n".join(lines)
 
+    _EVENT_TYPE_LABELS = {
+        "app_visible_first_seen": "应用首次上架",
+        "app_visible_region_added": "新增上架区域",
+        "app_removed_from_store": "应用下架",
+        "app_removed_from_region": "区域下架",
+        "app_version_updated": "版本更新",
+        "app_rating_changed": "评分变动",
+        "app_release_notes_changed": "更新日志变更",
+        "publisher_new_game_detected": "厂商新游上架",
+        "metadata_changed_significantly": "元数据变更",
+        "monitor_failed_repeatedly": "监控连续失败",
+    }
+
+    def _format_event_card(self, event: Event) -> dict:
+        payload = event.payload or {}
+        app = payload.get("app") or {}
+        identity = (
+            payload.get("display_name")
+            or app.get("name")
+            or payload.get("package_name")
+            or payload.get("bundle_id")
+            or payload.get("app_id")
+            or "未知"
+        )
+        event_label = self._EVENT_TYPE_LABELS.get(event.event_type, event.event_type)
+        store_label = "Google Play" if event.store == "google_play" else "App Store"
+
+        fields: list[dict] = []
+        fields.append({"is_short": True, "text": {"tag": "lark_md", "content": f"**商店**\n{store_label}"}})
+        if event.region:
+            fields.append({"is_short": True, "text": {"tag": "lark_md", "content": f"**区域**\n{event.region}"}})
+
+        if event.event_type == EventTypeEnum.APP_VERSION_UPDATED.value:
+            old_v = payload.get("old_version") or "-"
+            new_v = payload.get("new_version") or payload.get("version") or "-"
+            fields.append({"is_short": True, "text": {"tag": "lark_md", "content": f"**版本**\n{old_v} → {new_v}"}})
+
+        if event.event_type == EventTypeEnum.APP_RATING_CHANGED.value:
+            old_r = payload.get("old_rating")
+            new_r = payload.get("new_rating")
+            old_str = f"{old_r:.2f}" if old_r is not None else "-"
+            new_str = f"{new_r:.2f}" if new_r is not None else "-"
+            fields.append({"is_short": True, "text": {"tag": "lark_md", "content": f"**评分**\n{old_str} → {new_str}"}})
+            rc = payload.get("rating_count")
+            if rc is not None:
+                fields.append({"is_short": True, "text": {"tag": "lark_md", "content": f"**评分人数**\n{rc:,}"}})
+
+        if payload.get("developer_name"):
+            fields.append({"is_short": True, "text": {"tag": "lark_md", "content": f"**开发者**\n{payload['developer_name']}"}})
+        if payload.get("publisher_name"):
+            fields.append({"is_short": True, "text": {"tag": "lark_md", "content": f"**厂商**\n{payload['publisher_name']}"}})
+        if payload.get("visible_regions"):
+            fields.append({"is_short": False, "text": {"tag": "lark_md", "content": f"**可见区域**\n{', '.join(payload['visible_regions'])}"}})
+
+        elements: list[dict] = [{"tag": "div", "fields": fields}]
+
+        if event.event_type == EventTypeEnum.APP_RELEASE_NOTES_CHANGED.value and payload.get("release_notes"):
+            snippet = payload["release_notes"][:200]
+            if len(payload["release_notes"]) > 200:
+                snippet += "..."
+            elements.append({"tag": "div", "text": {"tag": "lark_md", "content": f"**更新日志**\n{snippet}"}})
+
+        url = payload.get("url") or app.get("url")
+        if url:
+            elements.append({
+                "tag": "action",
+                "actions": [{
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "查看商店"},
+                    "type": "primary",
+                    "url": url,
+                }],
+            })
+
+        icon_url = payload.get("metadata", {}).get("icon_url") or payload.get("metadata", {}).get("image")
+        title_elements: list[dict] = [{"tag": "plain_text", "content": f"{event_label} | {identity}"}]
+
+        header: dict = {
+            "title": {"tag": "plain_text", "content": f"{event_label} | {identity}"},
+            "template": "blue" if "visible" in event.event_type else "red" if "removed" in event.event_type or "failed" in event.event_type else "turquoise",
+        }
+        if icon_url:
+            header["icon"] = {"tag": "custom_icon", "img_key": icon_url}
+
+        return {
+            "header": header,
+            "elements": elements,
+        }
+
     def _serialize_app_status(self, status: AppStatusCurrent | None) -> dict | None:
         if not status:
             return None
@@ -591,6 +820,13 @@ class MonitoringService:
             "last_category": status.last_category,
             "last_url": status.last_url,
             "last_icon_url": status.last_icon_url,
+            "last_rating": status.last_rating,
+            "last_rating_count": status.last_rating_count,
+            "last_price": status.last_price,
+            "last_release_notes": status.last_release_notes,
+            "last_file_size": status.last_file_size,
+            "last_content_rating": status.last_content_rating,
+            "last_store_updated_at": status.last_store_updated_at,
         }
 
     def _default_samples(self) -> dict:

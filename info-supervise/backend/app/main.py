@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
-from app.api.routes import dashboard, events, jobs, watch_apps, watch_publishers
+from app.api.routes import app_history, dashboard, events, jobs, watch_apps, watch_publishers
 from app.core.redis_client import get_redis
 from app.db.session import AsyncSessionLocal
 from app.db.session import engine
@@ -34,6 +34,7 @@ app = FastAPI(
 )
 
 app.include_router(watch_apps.router)
+app.include_router(app_history.router)
 app.include_router(watch_publishers.router)
 app.include_router(events.router)
 app.include_router(jobs.router)

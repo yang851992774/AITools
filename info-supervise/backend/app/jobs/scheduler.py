@@ -23,6 +23,14 @@ def build_scheduler() -> AsyncIOScheduler:
         minutes=settings.notification_interval_minutes,
         id="deliver_notifications",
     )
+    if settings.digest_enabled:
+        scheduler.add_job(
+            run_digest_job,
+            "cron",
+            hour=settings.digest_hour,
+            minute=0,
+            id="generate_digest",
+        )
     return scheduler
 
 
@@ -42,3 +50,9 @@ async def run_notification_dispatch_job() -> None:
     async with AsyncSessionLocal() as session:
         service = MonitoringService(session)
         await service.dispatch_pending_events()
+
+
+async def run_digest_job() -> None:
+    async with AsyncSessionLocal() as session:
+        service = MonitoringService(session)
+        await service.generate_digest()

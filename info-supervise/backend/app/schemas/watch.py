@@ -31,6 +31,13 @@ class AppStatusSummary(ORMModel):
     last_category: str | None = None
     last_url: str | None = None
     last_icon_url: str | None = None
+    last_rating: float | None = None
+    last_rating_count: int | None = None
+    last_price: str | None = None
+    last_release_notes: str | None = None
+    last_file_size: str | None = None
+    last_content_rating: str | None = None
+    last_store_updated_at: str | None = None
 
 
 class WatchedAppCreate(ORMModel):
@@ -42,6 +49,7 @@ class WatchedAppCreate(ORMModel):
     regions: list[str] = Field(default_factory=list)
     notify_on_version_update: bool = True
     check_interval_minutes: int = Field(default=30, ge=5, le=1440)
+    tags: list[str] = Field(default_factory=list)
 
     @field_validator("regions")
     @classmethod
@@ -66,6 +74,7 @@ class WatchedAppRead(ORMModel):
     auto_added: bool
     notify_on_version_update: bool
     check_interval_minutes: int
+    tags: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -80,6 +89,7 @@ class WatchedAppUpdate(ORMModel):
     monitoring_enabled: bool | None = None
     notify_on_version_update: bool | None = None
     check_interval_minutes: int | None = Field(default=None, ge=5, le=1440)
+    tags: list[str] | None = None
 
     @field_validator("regions")
     @classmethod

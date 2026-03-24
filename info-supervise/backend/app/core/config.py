@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     feishu_webhook_url: str | None = None
     feishu_secret: str | None = None
 
+    digest_enabled: bool = False
+    digest_hour: int = 10
+
     @property
     def normalized_regions(self) -> list[str]:
         return [region.strip().upper() for region in self.default_regions.split(",") if region.strip()]

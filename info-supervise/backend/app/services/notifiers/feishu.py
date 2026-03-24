@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import time
+from typing import Any
 
 import httpx
 
@@ -15,12 +16,22 @@ class FeishuNotifier:
         self.timeout = timeout
 
     async def send_text(self, text: str) -> None:
-        payload = {
+        payload: dict[str, Any] = {
             "msg_type": "text",
             "content": {
                 "text": text,
             },
         }
+        await self._post(payload)
+
+    async def send_card(self, card: dict) -> None:
+        payload: dict[str, Any] = {
+            "msg_type": "interactive",
+            "card": card,
+        }
+        await self._post(payload)
+
+    async def _post(self, payload: dict[str, Any]) -> None:
         if self.secret:
             timestamp = str(int(time.time()))
             payload["timestamp"] = timestamp

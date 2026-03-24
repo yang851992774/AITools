@@ -85,8 +85,12 @@ class DiffEngine:
         else:
             region_state["consecutive_failure_count"] = 0
             old_version = status.last_version
+            old_rating = status.last_rating
+            old_release_notes = status.last_release_notes
             metadata_changed = self._has_metadata_change(status, result)
             version_updated = self._has_version_update(status, result, watched_app)
+            rating_changed = self._has_rating_change(status, result)
+            release_notes_changed = self._has_release_notes_change(status, result)
             was_visible = bool(region_state.get("visible"))
 
             if result.is_visible:
@@ -145,6 +149,47 @@ class DiffEngine:
                             dedupe_key=f"version-update:{watched_app.id}:{result.version or 'na'}",
                         )
                     )
+
+                if rating_changed:
+                    events.append(
+                        self._build_event(
+                            event_type=EventTypeEnum.APP_RATING_CHANGED.value,
+                            store=watched_app.store,
+                            watched_app_id=watched_app.id,
+                            region=result.region,
+                            payload=self._event_payload(
+                                watched_app,
+                                result,
+                                visible_regions,
+                                extra_payload={
+                                    "old_rating": old_rating,
+                                    "new_rating": result.rating,
+                                    "rating_count": result.rating_count,
+                                },
+                            ),
+                            dedupe_key=f"rating:{watched_app.id}:{result.rating or 'na'}",
+                        )
+                    )
+
+                if release_notes_changed:
+                    snippet = (result.release_notes or "")[:500]
+                    events.append(
+                        self._build_event(
+                            event_type=EventTypeEnum.APP_RELEASE_NOTES_CHANGED.value,
+                            store=watched_app.store,
+                            watched_app_id=watched_app.id,
+                            region=result.region,
+                            payload=self._event_payload(
+                                watched_app,
+                                result,
+                                visible_regions,
+                                extra_payload={
+                                    "release_notes": snippet,
+                                },
+                            ),
+                            dedupe_key=f"release-notes:{watched_app.id}:{hash(result.release_notes or '')}",
+                        )
+                    )
             else:
                 invisible_count = int(region_state.get("consecutive_invisible_count", 0)) + 1
                 region_state["consecutive_invisible_count"] = invisible_count
@@ -181,6 +226,20 @@ class DiffEngine:
                 status.last_url = result.url
             if result.icon_url:
                 status.last_icon_url = result.icon_url
+            if result.rating is not None:
+                status.last_rating = result.rating
+            if result.rating_count is not None:
+                status.last_rating_count = result.rating_count
+            if result.price is not None:
+                status.last_price = result.price
+            if result.release_notes is not None:
+                status.last_release_notes = result.release_notes
+            if result.file_size:
+                status.last_file_size = result.file_size
+            if result.content_rating:
+                status.last_content_rating = result.content_rating
+            if result.last_updated:
+                status.last_store_updated_at = result.last_updated
             status.metadata_json = result.metadata
 
         region_states[result.region] = region_state
@@ -202,6 +261,18 @@ class DiffEngine:
                 result.category and result.category != status.last_category,
             ]
         )
+
+    def _has_rating_change(self, status: AppStatusCurrent, result: StoreFetchResult) -> bool:
+        if result.rating is None or status.last_rating is None:
+            return False
+        return abs(result.rating - status.last_rating) >= 0.2
+
+    def _has_release_notes_change(self, status: AppStatusCurrent, result: StoreFetchResult) -> bool:
+        if not result.release_notes:
+            return False
+        if not status.last_release_notes:
+            return False
+        return result.release_notes.strip() != status.last_release_notes.strip()
 
     def _has_version_update(
         self,
