@@ -970,33 +970,41 @@
       }
 
       async function deleteApp(appId) {
-        if (!window.confirm("确认删除这个应用监控对象吗？历史事件会保留，但对象本身会被移除。")) {
-          return;
+        try {
+          if (!window.confirm("确认删除这个应用监控对象吗？历史事件会保留，但对象本身会被移除。")) {
+            return;
+          }
+          await request(`/watch/apps/${appId}`, { method: "DELETE" });
+          if (state.editingAppId === appId) {
+            resetAppForm();
+          }
+          if (state.apps.length <= 1 && state.appsPage > 1) {
+            state.appsPage = state.appsPage - 1;
+          }
+          await Promise.all([refreshDashboard(), loadAppsPage()]);
+          showStatus("应用监控已删除。");
+        } catch (error) {
+          showStatus(error.message, true);
         }
-        await request(`/watch/apps/${appId}`, { method: "DELETE" });
-        if (state.editingAppId === appId) {
-          resetAppForm();
-        }
-        if (state.apps.length <= 1 && state.appsPage > 1) {
-          state.appsPage = state.appsPage - 1;
-        }
-        await Promise.all([refreshDashboard(), loadAppsPage()]);
-        showStatus("应用监控已删除。");
       }
 
       async function deletePublisher(publisherId) {
-        if (!window.confirm("确认删除这个厂商监控对象吗？历史事件会保留，但对象本身会被移除。")) {
-          return;
+        try {
+          if (!window.confirm("确认删除这个厂商监控对象吗？历史事件会保留，但对象本身会被移除。")) {
+            return;
+          }
+          await request(`/watch/publishers/${publisherId}`, { method: "DELETE" });
+          if (state.editingPublisherId === publisherId) {
+            resetPublisherForm();
+          }
+          if (state.publishers.length <= 1 && state.publishersPage > 1) {
+            state.publishersPage = state.publishersPage - 1;
+          }
+          await Promise.all([refreshDashboard(), loadPublishersPage()]);
+          showStatus("厂商监控已删除。");
+        } catch (error) {
+          showStatus(error.message, true);
         }
-        await request(`/watch/publishers/${publisherId}`, { method: "DELETE" });
-        if (state.editingPublisherId === publisherId) {
-          resetPublisherForm();
-        }
-        if (state.publishers.length <= 1 && state.publishersPage > 1) {
-          state.publishersPage = state.publishersPage - 1;
-        }
-        await Promise.all([refreshDashboard(), loadPublishersPage()]);
-        showStatus("厂商监控已删除。");
       }
 
       async function submitAppForm(event) {
@@ -1115,9 +1123,8 @@
 
       window.startEditApp = startEditApp;
       window.startEditPublisher = startEditPublisher;
-      window.deleteApp = (appId) => deleteApp(appId).catch((error) => showStatus(error.message, true));
-      window.deletePublisher = (publisherId) =>
-        deletePublisher(publisherId).catch((error) => showStatus(error.message, true));
+      window.deleteApp = deleteApp;
+      window.deletePublisher = deletePublisher;
       window.goPage = goPage;
       window.changePageSize = changePageSize;
 
