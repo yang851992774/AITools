@@ -30,6 +30,7 @@ class AppStatusSummary(ORMModel):
     last_version: str | None = None
     last_category: str | None = None
     last_url: str | None = None
+    last_icon_url: str | None = None
 
 
 class WatchedAppCreate(ORMModel):

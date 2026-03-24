@@ -175,6 +175,56 @@
         font-size: 12px;
       }
 
+      .cell-sub {
+        display: none;
+        margin-top: 2px;
+      }
+
+      tr:hover .cell-sub {
+        display: block;
+      }
+
+      table th:last-child,
+      table td:last-child {
+        position: sticky;
+        right: 0;
+        background: rgba(17, 24, 39, 0.97);
+        z-index: 1;
+      }
+
+      .nowrap {
+        white-space: nowrap;
+      }
+
+      .app-name-cell {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .app-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        object-fit: cover;
+        flex-shrink: 0;
+        background: #1e293b;
+      }
+
+      .app-icon-placeholder {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        flex-shrink: 0;
+        background: linear-gradient(135deg, #334155 0%, #1e293b 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        font-weight: 700;
+        color: #64748b;
+      }
+
       .pager {
         display: flex;
         justify-content: space-between;
@@ -464,54 +514,52 @@
         </div>
       </div>
 
-      <div class="grid cols-2" style="margin-top: 16px">
-        <section class="card">
-          <div class="section-title">
-            <h2>应用列表</h2>
-            <span class="muted" id="apps-pager-info">共 0 条</span>
-          </div>
-          <div style="overflow:auto">
-            <table>
-              <thead>
-                <tr>
-                  <th>应用</th>
-                  <th>商店</th>
-                  <th>区域</th>
-                  <th>当前版本</th>
-                  <th>版本更新通知</th>
-                  <th>最新状态</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody id="apps-table"></tbody>
-            </table>
-          </div>
-          <div class="pager" id="apps-pager"></div>
-        </section>
+      <section class="card" style="margin-top: 16px">
+        <div class="section-title">
+          <h2>应用列表</h2>
+          <span class="muted" id="apps-pager-info">共 0 条</span>
+        </div>
+        <div style="overflow:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>应用</th>
+                <th>商店</th>
+                <th>区域</th>
+                <th>当前版本</th>
+                <th>版本更新通知</th>
+                <th>最新状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="apps-table"></tbody>
+          </table>
+        </div>
+        <div class="pager" id="apps-pager"></div>
+      </section>
 
-        <section class="card">
-          <div class="section-title">
-            <h2>厂商列表</h2>
-            <span class="muted" id="publishers-pager-info">共 0 条</span>
-          </div>
-          <div style="overflow:auto">
-            <table>
-              <thead>
-                <tr>
-                  <th>厂商</th>
-                  <th>商店</th>
-                  <th>区域</th>
-                  <th>自动纳管</th>
-                  <th>自动纳管版本更新</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody id="publishers-table"></tbody>
-            </table>
-          </div>
-          <div class="pager" id="publishers-pager"></div>
-        </section>
-      </div>
+      <section class="card" style="margin-top: 16px">
+        <div class="section-title">
+          <h2>厂商列表</h2>
+          <span class="muted" id="publishers-pager-info">共 0 条</span>
+        </div>
+        <div style="overflow:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>厂商</th>
+                <th>商店</th>
+                <th>区域</th>
+                <th>自动纳管</th>
+                <th>自动纳管版本更新</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="publishers-table"></tbody>
+          </table>
+        </div>
+        <div class="pager" id="publishers-pager"></div>
+      </section>
 
       <div class="grid cols-2" style="margin-top: 16px">
         <section class="card">
@@ -780,28 +828,43 @@
           .join("");
       }
 
+      function appIconHtml(item) {
+        const iconUrl = item.status?.last_icon_url;
+        if (iconUrl) {
+          return `<img class="app-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><span class="app-icon-placeholder" style="display:none">${escapeHtml((item.display_name || item.package_name || "?")[0])}</span>`;
+        }
+        const initial = (item.display_name || item.package_name || item.bundle_id || "?")[0];
+        return `<span class="app-icon-placeholder">${escapeHtml(initial)}</span>`;
+      }
+
       function renderApps(items) {
         const el = document.getElementById("apps-table");
         el.innerHTML = items
           .map((item) => {
             const identifier = item.display_name || item.package_name || item.bundle_id || item.app_id || item.id;
+            const subId = item.package_name || item.bundle_id || item.app_id || "";
             const status = item.status;
             const statusText = status
-              ? `${formatList(status.visible_regions)} / 最近检查 ${status.last_checked_at || "-"}`
-              : "尚未执行监控";
+              ? `${formatList(status.visible_regions)} / ${status.last_checked_at || "-"}`
+              : "尚未监控";
             return `
               <tr>
                 <td>
-                  <div>${escapeHtml(identifier)}</div>
-                  <div class="muted mono">${escapeHtml(item.package_name || item.bundle_id || item.app_id || "-")}</div>
+                  <div class="app-name-cell">
+                    ${appIconHtml(item)}
+                    <div>
+                      <div>${escapeHtml(identifier)}</div>
+                      <div class="muted mono cell-sub">${escapeHtml(subId)}</div>
+                    </div>
+                  </div>
                 </td>
-                <td>${escapeHtml(item.store)}</td>
-                <td>${escapeHtml(formatList(item.regions))}</td>
-                <td>${escapeHtml(status?.last_version || "-")}</td>
-                <td>${item.notify_on_version_update ? statusPill("enabled") : statusPill("disabled")}</td>
+                <td class="nowrap">${escapeHtml(item.store)}</td>
+                <td class="nowrap">${escapeHtml(formatList(item.regions))}</td>
+                <td class="nowrap">${escapeHtml(status?.last_version || "-")}</td>
+                <td class="nowrap">${item.notify_on_version_update ? statusPill("enabled") : statusPill("disabled")}</td>
                 <td>${escapeHtml(statusText)}</td>
                 <td>
-                  <div class="inline-actions">
+                  <div class="inline-actions nowrap">
                     <button type="button" class="secondary" onclick="startEditApp('${item.id}')">编辑</button>
                     <button type="button" class="danger" onclick="deleteApp('${item.id}')">删除</button>
                   </div>
@@ -816,24 +879,27 @@
         const el = document.getElementById("publishers-table");
         el.innerHTML = items
           .map(
-            (item) => `
+            (item) => {
+              const subId = item.publisher_url || item.publisher_ref || "";
+              return `
               <tr>
                 <td>
                   <div>${escapeHtml(item.publisher_name)}</div>
-                  <div class="muted mono">${escapeHtml(item.publisher_url || item.publisher_ref || "-")}</div>
+                  <div class="muted mono cell-sub">${escapeHtml(subId)}</div>
                 </td>
-                <td>${escapeHtml(item.store)}</td>
-                <td>${escapeHtml(formatList(item.regions))}</td>
-                <td>${item.auto_add_apps ? statusPill("enabled") : statusPill("disabled")}</td>
-                <td>${item.auto_added_notify_on_version_update ? statusPill("enabled") : statusPill("disabled")}</td>
+                <td class="nowrap">${escapeHtml(item.store)}</td>
+                <td class="nowrap">${escapeHtml(formatList(item.regions))}</td>
+                <td class="nowrap">${item.auto_add_apps ? statusPill("enabled") : statusPill("disabled")}</td>
+                <td class="nowrap">${item.auto_added_notify_on_version_update ? statusPill("enabled") : statusPill("disabled")}</td>
                 <td>
-                  <div class="inline-actions">
+                  <div class="inline-actions nowrap">
                     <button type="button" class="secondary" onclick="startEditPublisher('${item.id}')">编辑</button>
                     <button type="button" class="danger" onclick="deletePublisher('${item.id}')">删除</button>
                   </div>
                 </td>
               </tr>
-            `
+            `;
+            }
           )
           .join("");
       }

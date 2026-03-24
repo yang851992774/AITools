@@ -590,6 +590,7 @@ class MonitoringService:
             "last_version": status.last_version,
             "last_category": status.last_category,
             "last_url": status.last_url,
+            "last_icon_url": status.last_icon_url,
         }
 
     def _default_samples(self) -> dict:

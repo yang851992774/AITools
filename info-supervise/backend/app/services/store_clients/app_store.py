@@ -48,6 +48,8 @@ class AppStoreClient:
                 observed_at=observed_at,
             )
 
+        icon_url = record.get("artworkUrl512") or record.get("artworkUrl100")
+
         return StoreFetchResult(
             store=StoreEnum.APP_STORE,
             region=region.upper(),
@@ -57,6 +59,7 @@ class AppStoreClient:
             version=record.get("version"),
             category=record.get("primaryGenreName"),
             url=record.get("trackViewUrl") or self._build_app_url(region=region, bundle_id=bundle_id, app_id=app_id),
+            icon_url=icon_url,
             metadata={
                 "track_id": record.get("trackId"),
                 "bundle_id": record.get("bundleId"),
@@ -64,6 +67,7 @@ class AppStoreClient:
                 "genres": record.get("genres", []),
                 "track_view_url": record.get("trackViewUrl"),
                 "release_date": record.get("releaseDate"),
+                "icon_url": icon_url,
             },
             raw_payload=record,
             observed_at=observed_at,

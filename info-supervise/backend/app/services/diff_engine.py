@@ -179,6 +179,8 @@ class DiffEngine:
                 status.last_category = result.category
             if result.url:
                 status.last_url = result.url
+            if result.icon_url:
+                status.last_icon_url = result.icon_url
             status.metadata_json = result.metadata
 
         region_states[result.region] = region_state

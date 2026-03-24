@@ -42,6 +42,7 @@ class StoreFetchResult(BaseModel):
     version: str | None = None
     category: str | None = None
     url: str | None = None
+    icon_url: str | None = None
     metadata: dict = Field(default_factory=dict)
     raw_payload: dict = Field(default_factory=dict)
     observed_at: datetime

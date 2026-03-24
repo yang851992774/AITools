@@ -100,6 +100,7 @@ class AppStatusCurrent(Base):
     last_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_category: Mapped[str | None] = mapped_column(String(128), nullable=True)
     last_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    last_icon_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

@@ -84,6 +84,7 @@ class GooglePlayClient:
             version=version,
             category=category,
             url=url,
+            icon_url=metadata.get("image"),
             metadata=metadata,
             raw_payload={"html_length": len(response.text)},
             observed_at=observed_at,
